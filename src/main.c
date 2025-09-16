@@ -30,11 +30,17 @@ typedef struct {
    VkPhysicalDevice phsyicalDevice;
    VkDevice device;
    VkQueue graphicsQueue;
+   VkQueue presentationQueue;
+   
+   VkSurfaceKHR surface;
 } App;
 
 typedef struct {
    u32 graphicsFamily;
+   u32 presentationFamily;
+
    bool graphicsFound;
+   bool presentationFound;
 } QueueFamilyIndicies;
 
 const char* validationLayers[] = {
@@ -195,7 +201,7 @@ void setup_debug_messenger(App* app) {
    }
 }
 
-QueueFamilyIndicies find_queue_families(VkPhysicalDevice device) {
+QueueFamilyIndicies find_queue_families(App* app, VkPhysicalDevice device) {
    QueueFamilyIndicies indices = {0};
 
    u32 queueFamilyCount = 0;
@@ -210,6 +216,14 @@ QueueFamilyIndicies find_queue_families(VkPhysicalDevice device) {
          indices.graphicsFound = true;
       }
 
+      VkBool32 presentationSupport = false;
+      vkGetPhysicalDeviceSurfaceSupportKHR(device, i, app->surface, &presentationSupport);
+
+      if (presentationSupport) {
+         indices.presentationFamily = i;
+         indices.presentationFound = true;
+      }
+
       if (indices.graphicsFamily == true) {
          break;
       }
@@ -217,9 +231,9 @@ QueueFamilyIndicies find_queue_families(VkPhysicalDevice device) {
    return indices;
 }
 
-bool is_device_suitable(VkPhysicalDevice device) {
-   QueueFamilyIndicies indicies = find_queue_families(device);
-   return indicies.graphicsFound == true;
+bool is_device_suitable(App* app, VkPhysicalDevice device) {
+   QueueFamilyIndicies indicies = find_queue_families(app, device);
+   return indicies.graphicsFound == true && indicies.presentationFound == true;
 }
 
 void pick_physical_device(App* app) {
@@ -234,7 +248,7 @@ void pick_physical_device(App* app) {
    VkPhysicalDevice devices[deviceCount] = {};
    vkEnumeratePhysicalDevices(app->instance, &deviceCount, devices);
    for (Size i = 0; i < lengthof(devices); i++) {
-      if (is_device_suitable(devices[i])) {
+      if (is_device_suitable(app, devices[i])) {
          app->phsyicalDevice = devices[i];
          break;
       }
@@ -247,21 +261,25 @@ void pick_physical_device(App* app) {
 }
 
 void create_logical_device(App* app) {
-   QueueFamilyIndicies indices = find_queue_families(app->phsyicalDevice);
+   QueueFamilyIndicies indices = find_queue_families(app, app->phsyicalDevice);
 
-   VkDeviceQueueCreateInfo queueCreateInfo = {0};
-   queueCreateInfo.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
-   queueCreateInfo.queueFamilyIndex = indices.graphicsFamily;
-   queueCreateInfo.queueCount = 1;
+   // vectorT(VkDeviceQueueCreateInfo) metaQueueCreateInfos = vector(VkDeviceQueueCreateInfo, &global_allocator);
+   u32 uniqueQueueFamilies[2] = {indices.graphicsFamily, indices.presentationFamily};
 
    float queuePriority = 1.0f;
-   queueCreateInfo.pQueuePriorities = &queuePriority;
+   VkDeviceQueueCreateInfo queueCreateInfos[2] = {0};
+   for (Size i = 0; i < lengthof(queueCreateInfos); i++) {
+      queueCreateInfos[i].sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
+      queueCreateInfos[i].queueFamilyIndex = uniqueQueueFamilies[i];
+      queueCreateInfos[i].queueCount = 1;
+      queueCreateInfos[i].pQueuePriorities = &queuePriority;
+   }
 
    VkPhysicalDeviceFeatures deviceFeatures = {0};
 
    VkDeviceCreateInfo createInfo = {0};
    createInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
-   createInfo.pQueueCreateInfos = &queueCreateInfo;
+   createInfo.pQueueCreateInfos = queueCreateInfos;
    createInfo.queueCreateInfoCount = 1;
    createInfo.pEnabledFeatures = &deviceFeatures;
    createInfo.enabledExtensionCount = 0;
@@ -279,11 +297,20 @@ void create_logical_device(App* app) {
    }
 
    vkGetDeviceQueue(app->device, indices.graphicsFamily, 0, &app->graphicsQueue);
+   vkGetDeviceQueue(app->device, indices.presentationFamily, 0, &app->presentationQueue);
+}
+
+void create_surface(App* app) {
+   if (glfwCreateWindowSurface(app->instance, app->window, nullptr, &app->surface) != VK_SUCCESS) {
+      printf("failed to create surface\n");
+      abort();
+   }
 }
 
 void init_vulkan(App* app) {
    create_instance(&app->instance);
    setup_debug_messenger(app); 
+   create_surface(app);
    pick_physical_device(app);
    create_logical_device(app);
 }
@@ -303,6 +330,7 @@ void cleanup(App* app) {
    }
 
    vkDestroyDevice(app->device, nullptr);
+   vkDestroySurfaceKHR(app->instance, app->surface, nullptr);
    vkDestroyInstance(app->instance, nullptr);
    glfwDestroyWindow(app->window);
    glfwTerminate();
