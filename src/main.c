@@ -27,7 +27,7 @@ typedef struct {
 
    VkInstance instance;
    VkDebugUtilsMessengerEXT debugMessenger;
-   VkPhysicalDevice phsyicalDevice;
+   VkPhysicalDevice physicalDevice;
    VkDevice device;
    VkQueue graphicsQueue;
    VkQueue presentationQueue;
@@ -41,7 +41,7 @@ typedef struct {
 
    bool graphicsFound;
    bool presentationFound;
-} QueueFamilyIndicies;
+} QueueFamilyIndices;
 
 const char* validationLayers[] = {
    "VK_LAYER_KHRONOS_validation"
@@ -77,15 +77,11 @@ void get_required_extensions(vectorT(const char*) extensions) {
    const char** glfwExtensions;
    glfwExtensions = glfwGetRequiredInstanceExtensions(&glfwExtensionCount);
 
-   // vectorT(const char*) extensions = vector(char*, &global_allocator);
-   // const char* extensions[glfwExtensionCount + 1] = {};
    for (Size i = 0; i < glfwExtensionCount; i++) {
-      // extensions[i] = glfwExtensions[i];
       vector_push_back(extensions, glfwExtensions[i]);
    }
 
    if (enableValidationLayers) {
-      // extensions[lengthof(extensions) - 1] = VK_EXT_DEBUG_UTILS_EXTENSION_NAME;
       vector_push_back(extensions, VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
    }
 }
@@ -203,8 +199,8 @@ void setup_debug_messenger(App* app) {
    }
 }
 
-QueueFamilyIndicies find_queue_families(App* app, VkPhysicalDevice device) {
-   QueueFamilyIndicies indices = {0};
+QueueFamilyIndices find_queue_families(App* app, VkPhysicalDevice device) {
+   QueueFamilyIndices indices = {0};
 
    u32 queueFamilyCount = 0;
    vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, nullptr);
@@ -250,19 +246,19 @@ void pick_physical_device(App* app) {
    vkEnumeratePhysicalDevices(app->instance, &deviceCount, devices);
    for (Size i = 0; i < lengthof(devices); i++) {
       if (is_device_suitable(app, devices[i])) {
-         app->phsyicalDevice = devices[i];
+         app->physicalDevice = devices[i];
          break;
       }
    }
 
-   if (app->phsyicalDevice == VK_NULL_HANDLE) {
+   if (app->physicalDevice == VK_NULL_HANDLE) {
       printf("failed to find suitable GPU.\n");
       abort();
    }
 }
 
 void create_logical_device(App* app) {
-   QueueFamilyIndicies indices = find_queue_families(app, app->phsyicalDevice);
+   QueueFamilyIndices indices = find_queue_families(app, app->physicalDevice);
 
    u32 uniqueQueueFamilies[2] = {indices.graphicsFamily, indices.presentationFamily};
 
@@ -291,7 +287,7 @@ void create_logical_device(App* app) {
        createInfo.enabledLayerCount = 0;
    }
 
-   if (vkCreateDevice(app->phsyicalDevice, &createInfo, nullptr, &app->device) != VK_SUCCESS) {
+   if (vkCreateDevice(app->physicalDevice, &createInfo, nullptr, &app->device) != VK_SUCCESS) {
       printf("failed to create logical device!\n");
       abort();
    }
@@ -325,11 +321,12 @@ App init_app(void) {
 }
 
 void cleanup(App* app) {
+   vkDestroyDevice(app->device, nullptr);
+
    if (enableValidationLayers) {
       destroy_debug_utils_messenger_ext(app->instance, app->debugMessenger, nullptr);
    }
 
-   vkDestroyDevice(app->device, nullptr);
    vkDestroySurfaceKHR(app->instance, app->surface, nullptr);
    vkDestroyInstance(app->instance, nullptr);
    glfwDestroyWindow(app->window);
