@@ -72,21 +72,22 @@ void populate_debug_messenger_createInfo(VkDebugUtilsMessengerCreateInfoEXT* cre
    createInfo->pUserData = nullptr;
 }
 
-vectorT(const char*) get_required_extensions(void) {
+void get_required_extensions(vectorT(const char*) extensions) {
    u32 glfwExtensionCount = 0;
-   const vectorT(char*) glfwExtensions;
+   const char** glfwExtensions;
    glfwExtensions = glfwGetRequiredInstanceExtensions(&glfwExtensionCount);
 
-   vectorT(const char*) extensions = vector(char*, &global_allocator);
+   // vectorT(const char*) extensions = vector(char*, &global_allocator);
+   // const char* extensions[glfwExtensionCount + 1] = {};
    for (Size i = 0; i < glfwExtensionCount; i++) {
+      // extensions[i] = glfwExtensions[i];
       vector_push_back(extensions, glfwExtensions[i]);
    }
 
    if (enableValidationLayers) {
+      // extensions[lengthof(extensions) - 1] = VK_EXT_DEBUG_UTILS_EXTENSION_NAME;
       vector_push_back(extensions, VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
    }
-
-   return extensions;
 }
 
 bool check_validation_layers_support(void) {
@@ -154,7 +155,8 @@ void create_instance(VkInstance* instance) {
    createInfo.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
    createInfo.pApplicationInfo = &appInfo;
 
-   vectorT(const char*) extensions = get_required_extensions();
+   vectorT(const char*) extensions = vector(const char*, &global_allocator);
+   get_required_extensions(extensions);
    createInfo.enabledExtensionCount = (u32)vector_length(extensions);
    createInfo.ppEnabledExtensionNames = extensions;
 
@@ -193,7 +195,7 @@ static void destroy_debug_utils_messenger_ext(VkInstance instance, VkDebugUtilsM
 
 void setup_debug_messenger(App* app) {
    if (!enableValidationLayers) return;
-   VkDebugUtilsMessengerCreateInfoEXT createInfo;
+   VkDebugUtilsMessengerCreateInfoEXT createInfo = {0};
    populate_debug_messenger_createInfo(&createInfo);
 
    if (create_debug_utils_messenger_ext(&app->instance, &createInfo, nullptr, &app->debugMessenger) != VK_SUCCESS) {
@@ -224,7 +226,7 @@ QueueFamilyIndicies find_queue_families(App* app, VkPhysicalDevice device) {
          indices.presentationFound = true;
       }
 
-      if (indices.graphicsFamily == true) {
+      if (indices.graphicsFamily == true || indices.presentationFound == true) {
          break;
       }
    }
@@ -244,7 +246,6 @@ void pick_physical_device(App* app) {
       printf("No device found.");
    }
 
-   // vectorT(VkPhysicalDevice) devices = vector(VkPhysicalDevice, deviceCount, &global_allocator);
    VkPhysicalDevice devices[deviceCount] = {};
    vkEnumeratePhysicalDevices(app->instance, &deviceCount, devices);
    for (Size i = 0; i < lengthof(devices); i++) {
@@ -263,7 +264,6 @@ void pick_physical_device(App* app) {
 void create_logical_device(App* app) {
    QueueFamilyIndicies indices = find_queue_families(app, app->phsyicalDevice);
 
-   // vectorT(VkDeviceQueueCreateInfo) metaQueueCreateInfos = vector(VkDeviceQueueCreateInfo, &global_allocator);
    u32 uniqueQueueFamilies[2] = {indices.graphicsFamily, indices.presentationFamily};
 
    float queuePriority = 1.0f;

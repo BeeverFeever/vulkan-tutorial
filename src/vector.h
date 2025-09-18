@@ -21,6 +21,7 @@ typedef struct {
 #define vector2(T,a) vector_init(sizeof(T), VECTOR_DEFAULT_CAPACITY, a)
 #define EXPAND(x) x
 #define GET_MACRO(_1, _2, _3, name, ...) name
+
 /*
  * @brief create a new vector
  *
@@ -49,6 +50,10 @@ void *vector_ensure_capacity(void *a, Size item_count, Size item_size) {
 
       Size new_size = sizeof(VectorHeader) + (new_capacity * item_size);
       h = h->allocator->alloc(new_size, h->allocator->ctx);
+      if (!h) {
+         printf("Out of memory: %s\n", __func__);
+         abort();
+      }
    }
 
    h++;
