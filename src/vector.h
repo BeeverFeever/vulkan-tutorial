@@ -65,6 +65,19 @@ void *vector_ensure_capacity(void *a, Size item_count, Size item_size) {
       (a)[vector_header(a)->length] = (v), \
       &(a)[vector_header(a)->length++])
 
+bool vector_is_empty(void* vector) {
+   return vector_header(vector)->length == 0;
+}
+
+void vector_update_length(Size new_length, void* vector) {
+   VectorHeader* header = vector_header(vector);
+   if (new_length > header->capacity) {
+      printf("Attempt to update vector length (new length: %ld) to be greater than capacity (capacity: %ld).\n", new_length, header->capacity);
+      return;
+   }
+   vector_header(vector)->length = new_length;
+}
+
 void *vector_init(Size item_size, Size capacity, Allocator* a) {
    Size total_size = item_size * capacity + sizeof(VectorHeader);
 
