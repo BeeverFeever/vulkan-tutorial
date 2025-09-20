@@ -3,6 +3,7 @@
 #include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 #include "memory.h"
 
@@ -91,5 +92,6 @@ void *vector_init(Size item_size, Size capacity, Allocator* a) {
    h->length = 0;
    h++;
    void* ptr = h;
+   memset(ptr, 0, capacity);
    return ptr;
 }
