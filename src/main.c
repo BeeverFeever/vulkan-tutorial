@@ -36,6 +36,7 @@ typedef struct {
    VkSwapchainKHR swapChain;
 
    vectorT(VkImage) swapChainImages;
+   vectorT(VkImageView) swapChainImageViews;
    VkFormat swapChainImageFormat;
    VkExtent2D swapChainExtent;
 } App;
@@ -459,6 +460,32 @@ void create_surface(App* app) {
    }
 }
 
+void create_image_views(App* app) {
+   app->swapChainImageViews = vector(VkImage, vector_length(app->swapChainImages), &global_allocator);
+
+   for (Size i = 0; i < vector_length(app->swapChainImages); i++) {
+      VkImageViewCreateInfo createInfo = {};
+      createInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+      createInfo.image = app->swapChainImages[i];
+      createInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
+      createInfo.format = app->swapChainImageFormat;
+      createInfo.components.r = VK_COMPONENT_SWIZZLE_IDENTITY;
+      createInfo.components.g = VK_COMPONENT_SWIZZLE_IDENTITY;
+      createInfo.components.b = VK_COMPONENT_SWIZZLE_IDENTITY;
+      createInfo.components.a = VK_COMPONENT_SWIZZLE_IDENTITY;
+      createInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+      createInfo.subresourceRange.baseMipLevel = 0;
+      createInfo.subresourceRange.levelCount = 1;
+      createInfo.subresourceRange.baseArrayLayer = 0;
+      createInfo.subresourceRange.layerCount = 1;
+
+      if (vkCreateImageView(app->device, &createInfo, nullptr, &app->swapChainImageViews[i]) != VK_SUCCESS) {
+         fprintf(stderr, "failed to create image views\n");
+         abort();
+      }
+   }
+}
+
 void init_vulkan(App* app) {
    create_instance(&app->instance);
    setup_debug_messenger(app); 
@@ -466,6 +493,7 @@ void init_vulkan(App* app) {
    pick_physical_device(app);
    create_logical_device(app);
    create_swap_chain(app);
+   create_image_views(app);
 }
 
 App init_app(void) {
