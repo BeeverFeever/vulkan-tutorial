@@ -1,9 +1,10 @@
 #include "memory.h"
 
+#include <assert.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <stdlib.h>
-#include <assert.h>
 #include <string.h>
 
 #define ARENA_DEFAULT_ALIGNMENT (2 * sizeof(void*))
@@ -33,13 +34,15 @@ static void* arena_alloc_allocator(Size size, void* ctx) {
    uintptr curr_offset_ptr = (ptrdiff)a->buf + (ptrdiff)a->offset;
    Size padding = get_padding(curr_offset_ptr, ARENA_DEFAULT_ALIGNMENT);
 
-   if (a->offset + size > a->capacity)
+   if (a->offset + size > a->capacity) {
+      fprintf(stderr, "arena allocator run out of memory.\n");
       return nullptr;
+   }
 
-   void* new_ptr = a->buf + padding;
    a->offset += padding + size;
+   memset(a->buf + a->offset, 0, size);
 
-   return new_ptr;
+   return a->buf + a->offset;
 }
 
 void* arena_alloc(Arena* a, Size size) {
