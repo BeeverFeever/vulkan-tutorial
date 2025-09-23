@@ -41,6 +41,7 @@ typedef struct {
    VkFormat swapChainImageFormat;
    VkExtent2D swapChainExtent;
 
+   VkRenderPass renderPass;
    VkPipelineLayout pipelineLayout;
 } App;
 
@@ -599,6 +600,39 @@ void create_graphics_pipeline(App* app) {
    vkDestroyShaderModule(app->device, fragShaderModule, nullptr);
 }
 
+void create_render_pass(App* app) {
+   VkAttachmentDescription colourAttachment = {0};
+   colourAttachment.format = app->swapChainImageFormat;
+   colourAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
+   colourAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+   colourAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+   colourAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+   colourAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+   colourAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+   colourAttachment.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+
+   VkAttachmentReference colourAttachmentRef = {0};
+   colourAttachmentRef.attachment = 0;
+   colourAttachmentRef.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+
+   VkSubpassDescription subpass = {0};
+   subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+   subpass.colorAttachmentCount = 1;
+   subpass.pColorAttachments = &colourAttachmentRef;
+
+   VkRenderPassCreateInfo renderPassInfo = {0};
+   renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
+   renderPassInfo.attachmentCount = 1;
+   renderPassInfo.pAttachments = &colourAttachment;
+   renderPassInfo.subpassCount = 1;
+   renderPassInfo.pSubpasses = &subpass;
+
+   if (vkCreateRenderPass(app->device, &renderPassInfo, nullptr, &app->renderPass) != VK_SUCCESS) {
+      fprintf(stderr, "failed to create render pass.\n");
+      exit(EXIT_FAILURE);
+   }
+}
+
 void init_vulkan(App* app) {
    create_instance(&app->instance);
    setup_debug_messenger(app); 
@@ -608,6 +642,7 @@ void init_vulkan(App* app) {
    create_logical_device(app);
    create_swap_chain(app);
    create_image_views(app);
+   create_render_pass(app);
    create_graphics_pipeline(app);
 }
 
@@ -622,6 +657,7 @@ App init_app(void) {
 
 void cleanup(App* app) {
    vkDestroyPipelineLayout(app->device, app->pipelineLayout, nullptr);
+   vkDestroyRenderPass(app->device, app->renderPass, nullptr);
 
    for (Size i = 0; i < vector_length(app->swapChainImageViews); i++) {
       vkDestroyImageView(app->device, app->swapChainImageViews[i], nullptr);
