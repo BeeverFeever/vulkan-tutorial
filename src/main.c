@@ -38,8 +38,10 @@ typedef struct {
 
    vectorT(VkImage) swapChainImages;
    vectorT(VkImageView) swapChainImageViews;
+   vectorT(VkFramebuffer) swapChainFramebuffers;
    VkFormat swapChainImageFormat;
    VkExtent2D swapChainExtent;
+
 
    VkRenderPass renderPass;
    VkPipelineLayout pipelineLayout;
@@ -655,6 +657,31 @@ void create_render_pass(App* app) {
    }
 }
 
+void create_framebuffers(App* app) {
+   app->swapChainFramebuffers = vector(VkFramebuffer, vector_length(app->swapChainImageViews), &global_allocator);
+
+   for (Size i = 0; i < vector_length(app->swapChainImageViews); i++) {
+      VkImageView attachments[] = {
+         app->swapChainImageViews[i],
+      };
+
+      VkFramebufferCreateInfo framebufferCreateInfo = {0};
+      framebufferCreateInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+      framebufferCreateInfo.renderPass = app->renderPass;
+      framebufferCreateInfo.attachmentCount = 1;
+      framebufferCreateInfo.pAttachments = attachments;
+      framebufferCreateInfo.width = app->swapChainExtent.width;
+      framebufferCreateInfo.height = app->swapChainExtent.height;
+      framebufferCreateInfo.layers = 1;
+
+      if (vkCreateFramebuffer(app->device, &framebufferCreateInfo, nullptr, &app->swapChainFramebuffers[i]) != VK_SUCCESS) {
+         fprintf(stderr, "failed to create framebuffer.\n");
+         exit(EXIT_FAILURE);
+      }
+   }
+   vector_update_length(vector_length(app->swapChainImageViews), app->swapChainFramebuffers);
+}
+
 void init_vulkan(App* app) {
    create_instance(&app->instance);
    setup_debug_messenger(app); 
@@ -666,6 +693,7 @@ void init_vulkan(App* app) {
    create_image_views(app);
    create_render_pass(app);
    create_graphics_pipeline(app);
+   create_framebuffers(app);
 }
 
 App init_app(void) {
@@ -678,6 +706,10 @@ App init_app(void) {
 }
 
 void cleanup(App* app) {
+   for (Size i = 0; i < vector_length(app->swapChainFramebuffers); i++) {
+      vkDestroyFramebuffer(app->device, app->swapChainFramebuffers[i], nullptr);
+   }
+
    vkDestroyPipeline(app->device, app->graphicsPipeline, nullptr);
    vkDestroyPipelineLayout(app->device, app->pipelineLayout, nullptr);
    vkDestroyRenderPass(app->device, app->renderPass, nullptr);
