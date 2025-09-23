@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+
+./vulkan-1.4.321.1/x86_64/bin/glslc ./resources/shaders/basic.frag -o ./resources/shaders/frag.spv
+./vulkan-1.4.321.1/x86_64/bin/glslc ./resources/shaders/basic.vert -o ./resources/shaders/vert.spv

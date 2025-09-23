@@ -2,6 +2,8 @@
 
 set -xe
 
+./compile-shaders
+
 cfiles=$(find ./src -type f -name "*.c")
 
 COMPILER_FLAGS="-std=c23 -g3 -Wall -Wextra -Wconversion -Wdouble-promotion -Wno-unused-parameter -Wno-unused-function -Wno-sign-conversion -fsanitize=undefined,address"

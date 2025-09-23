@@ -11,6 +11,7 @@
 
 #include "vector.h"
 #include "memory.h"
+#include "file.h"
 
 #define Optional(T) struct Optional##T { bool ok; T* value; }
 #define get_value(o) *((o).value)
@@ -39,6 +40,8 @@ typedef struct {
    vectorT(VkImageView) swapChainImageViews;
    VkFormat swapChainImageFormat;
    VkExtent2D swapChainExtent;
+
+   VkPipelineLayout pipelineLayout;
 } App;
 
 typedef struct {
@@ -156,7 +159,7 @@ GLFWwindow *init_window(u32 width, u32 height) {
 void create_instance(VkInstance* instance) {
    if (enableValidationLayers && !check_validation_layers_support()) {
       fprintf(stderr, "Validation layers requested but not available.\n");
-      abort();
+      exit(EXIT_FAILURE);
    }
 
    VkApplicationInfo appInfo = {0};
@@ -190,7 +193,7 @@ void create_instance(VkInstance* instance) {
 
    if (vkCreateInstance(&createInfo, nullptr, instance) != VK_SUCCESS) {
       fprintf(stderr, "Error initialising vulkan instance.\n");
-      abort();
+      exit(EXIT_FAILURE);
    }
 }
 
@@ -378,7 +381,7 @@ void create_swap_chain(App* app) {
 
    if (vkCreateSwapchainKHR(app->device, &createInfo, nullptr, &app->swapChain)) {
       fprintf(stderr, "failed to create swapchain\n");
-      abort();
+      exit(EXIT_FAILURE);
    }
 
    vkGetSwapchainImagesKHR(app->device, app->swapChain, &imageCount, nullptr);
@@ -409,7 +412,7 @@ void pick_physical_device(App* app) {
 
    if (app->physicalDevice == VK_NULL_HANDLE) {
       printf("failed to find suitable GPU.\n");
-      abort();
+      exit(EXIT_FAILURE);
    }
 }
 
@@ -446,7 +449,7 @@ void create_logical_device(App* app) {
 
    if (vkCreateDevice(app->physicalDevice, &createInfo, nullptr, &app->device) != VK_SUCCESS) {
       printf("failed to create logical device!\n");
-      abort();
+      exit(EXIT_FAILURE);
    }
 
    vkGetDeviceQueue(app->device, indices.graphicsFamily, 0, &app->graphicsQueue);
@@ -456,7 +459,7 @@ void create_logical_device(App* app) {
 void create_surface(App* app) {
    if (glfwCreateWindowSurface(app->instance, app->window, nullptr, &app->surface) != VK_SUCCESS) {
       printf("failed to create surface\n");
-      abort();
+      exit(EXIT_FAILURE);
    }
 }
 
@@ -481,9 +484,119 @@ void create_image_views(App* app) {
 
       if (vkCreateImageView(app->device, &createInfo, nullptr, &app->swapChainImageViews[i]) != VK_SUCCESS) {
          fprintf(stderr, "failed to create image views\n");
-         abort();
+         exit(EXIT_FAILURE);
       }
    }
+   vector_update_length(vector_length(app->swapChainImages), app->swapChainImageViews);
+}
+
+VkShaderModule create_shader_module(App* app, u32* code, Size codeLength) {
+   VkShaderModuleCreateInfo createInfo = {0};
+   createInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
+   createInfo.codeSize = codeLength;
+   createInfo.pCode = code;
+
+   VkShaderModule shaderModule;
+   if (vkCreateShaderModule(app->device, &createInfo, nullptr, &shaderModule) != VK_SUCCESS) {
+      fprintf(stderr, "failed to create shader module.\n");
+      exit(EXIT_FAILURE);
+   }
+   return shaderModule;
+}
+
+void create_graphics_pipeline(App* app) {
+   Size vertLength = 0;
+   Size fragLength = 0;
+
+   u32* fragShaderCode = read_binary_file("resources/shaders/frag.spv", &fragLength, &global_allocator);
+   u32* vertShaderCode = read_binary_file("resources/shaders/vert.spv", &vertLength, &global_allocator);
+
+   VkShaderModule vertShaderModule = create_shader_module(app, vertShaderCode, vertLength);
+   VkShaderModule fragShaderModule = create_shader_module(app, fragShaderCode, fragLength);
+
+   VkPipelineShaderStageCreateInfo vertShaderStageInfo = {0};
+   vertShaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+   vertShaderStageInfo.stage = VK_SHADER_STAGE_VERTEX_BIT;
+   vertShaderStageInfo.module = vertShaderModule;
+   vertShaderStageInfo.pName = "main";
+
+   VkPipelineShaderStageCreateInfo fragShaderStageInfo = {0};
+   fragShaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+   fragShaderStageInfo.stage = VK_SHADER_STAGE_FRAGMENT_BIT;
+   fragShaderStageInfo.module = fragShaderModule;
+   fragShaderStageInfo.pName = "main";
+
+   VkPipelineShaderStageCreateInfo shaderStages[] = {vertShaderStageInfo, fragShaderStageInfo};
+
+   VkPipelineVertexInputStateCreateInfo vertexInputInfo = {0};
+   vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
+   vertexInputInfo.vertexBindingDescriptionCount = 0;
+   vertexInputInfo.pVertexBindingDescriptions = nullptr; // Optional
+   vertexInputInfo.vertexAttributeDescriptionCount = 0;
+   vertexInputInfo.pVertexAttributeDescriptions = nullptr; // Optional
+
+   VkPipelineInputAssemblyStateCreateInfo inputAssembly = {0};
+   inputAssembly.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
+   inputAssembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+   inputAssembly.primitiveRestartEnable = VK_FALSE;
+
+   VkPipelineViewportStateCreateInfo viewportState = {0};
+   viewportState.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
+   viewportState.viewportCount = 1;
+   viewportState.scissorCount = 1;
+
+   VkPipelineRasterizationStateCreateInfo rasterizer = {0};
+   rasterizer.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
+   rasterizer.depthClampEnable = VK_FALSE;
+   rasterizer.rasterizerDiscardEnable = VK_FALSE;
+   rasterizer.polygonMode = VK_POLYGON_MODE_FILL;
+   rasterizer.lineWidth = 1.0f;
+   rasterizer.cullMode = VK_CULL_MODE_BACK_BIT;
+   rasterizer.frontFace = VK_FRONT_FACE_CLOCKWISE;
+   rasterizer.depthBiasEnable = VK_FALSE;
+
+   VkPipelineMultisampleStateCreateInfo multisampling = {0};
+   multisampling.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
+   multisampling.sampleShadingEnable = VK_FALSE;
+   multisampling.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+
+   VkPipelineColorBlendAttachmentState colorBlendAttachment = {0};
+   colorBlendAttachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+   colorBlendAttachment.blendEnable = VK_FALSE;
+
+   VkPipelineColorBlendStateCreateInfo colorBlending = {0};
+   colorBlending.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
+   colorBlending.logicOpEnable = VK_FALSE;
+   colorBlending.logicOp = VK_LOGIC_OP_COPY;
+   colorBlending.attachmentCount = 1;
+   colorBlending.pAttachments = &colorBlendAttachment;
+   colorBlending.blendConstants[0] = 0.0f;
+   colorBlending.blendConstants[1] = 0.0f;
+   colorBlending.blendConstants[2] = 0.0f;
+   colorBlending.blendConstants[3] = 0.0f;
+
+   VkDynamicState dynamicStates[] = {
+      VK_DYNAMIC_STATE_VIEWPORT,
+      VK_DYNAMIC_STATE_SCISSOR,
+   };
+
+   VkPipelineDynamicStateCreateInfo dynamicState = {0};
+   dynamicState.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
+   dynamicState.dynamicStateCount = lengthof(dynamicStates);
+   dynamicState.pDynamicStates = dynamicStates;
+
+   VkPipelineLayoutCreateInfo pipelineLayoutInfo = {0};
+   pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+   pipelineLayoutInfo.setLayoutCount = 0;
+   pipelineLayoutInfo.pushConstantRangeCount = 0;
+
+   if (vkCreatePipelineLayout(app->device, &pipelineLayoutInfo, nullptr, &app->pipelineLayout) != VK_SUCCESS) {
+      fprintf(stderr, "failed to create pipeline layout.\n");
+      exit(EXIT_FAILURE);
+   }
+
+   vkDestroyShaderModule(app->device, vertShaderModule, nullptr);
+   vkDestroyShaderModule(app->device, fragShaderModule, nullptr);
 }
 
 void init_vulkan(App* app) {
@@ -491,9 +604,11 @@ void init_vulkan(App* app) {
    setup_debug_messenger(app); 
    create_surface(app);
    pick_physical_device(app);
+
    create_logical_device(app);
    create_swap_chain(app);
    create_image_views(app);
+   create_graphics_pipeline(app);
 }
 
 App init_app(void) {
@@ -506,6 +621,8 @@ App init_app(void) {
 }
 
 void cleanup(App* app) {
+   vkDestroyPipelineLayout(app->device, app->pipelineLayout, nullptr);
+
    for (Size i = 0; i < vector_length(app->swapChainImageViews); i++) {
       vkDestroyImageView(app->device, app->swapChainImageViews[i], nullptr);
    }
