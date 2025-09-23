@@ -43,6 +43,7 @@ typedef struct {
 
    VkRenderPass renderPass;
    VkPipelineLayout pipelineLayout;
+   VkPipeline graphicsPipeline;
 } App;
 
 typedef struct {
@@ -596,6 +597,27 @@ void create_graphics_pipeline(App* app) {
       exit(EXIT_FAILURE);
    }
 
+   VkGraphicsPipelineCreateInfo pipelineInfo = {0};
+   pipelineInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
+   pipelineInfo.stageCount = 2;
+   pipelineInfo.pStages = shaderStages;
+   pipelineInfo.pVertexInputState = &vertexInputInfo;
+   pipelineInfo.pInputAssemblyState = &inputAssembly;
+   pipelineInfo.pViewportState = &viewportState;
+   pipelineInfo.pRasterizationState = &rasterizer;
+   pipelineInfo.pMultisampleState = &multisampling;
+   pipelineInfo.pDepthStencilState = nullptr; // Optional
+   pipelineInfo.pColorBlendState = &colorBlending;
+   pipelineInfo.pDynamicState = &dynamicState;
+   pipelineInfo.layout = app->pipelineLayout;
+   pipelineInfo.renderPass = app->renderPass;
+   pipelineInfo.subpass = 0;
+
+   if (vkCreateGraphicsPipelines(app->device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &app->graphicsPipeline) != VK_SUCCESS) {
+      fprintf(stderr, "failed to create graphics pipeline.\n");
+      exit(EXIT_FAILURE);
+   }
+
    vkDestroyShaderModule(app->device, vertShaderModule, nullptr);
    vkDestroyShaderModule(app->device, fragShaderModule, nullptr);
 }
@@ -656,6 +678,7 @@ App init_app(void) {
 }
 
 void cleanup(App* app) {
+   vkDestroyPipeline(app->device, app->graphicsPipeline, nullptr);
    vkDestroyPipelineLayout(app->device, app->pipelineLayout, nullptr);
    vkDestroyRenderPass(app->device, app->renderPass, nullptr);
 
