@@ -506,6 +506,10 @@ App init_app(void) {
 }
 
 void cleanup(App* app) {
+   for (Size i = 0; i < vector_length(app->swapChainImageViews); i++) {
+      vkDestroyImageView(app->device, app->swapChainImageViews[i], nullptr);
+   }
+
    vkDestroySwapchainKHR(app->device, app->swapChain, nullptr);
    vkDestroyDevice(app->device, nullptr);
 
