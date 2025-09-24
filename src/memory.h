@@ -22,4 +22,5 @@ typedef struct {
 } Allocator;
 
 Allocator arena_allocator(Arena* a);
+Allocator debug_arena_allocator(Arena* a);
 Allocator stdlib_allocator();

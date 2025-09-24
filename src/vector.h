@@ -95,3 +95,10 @@ void *vector_init(Size item_size, Size capacity, Allocator* a) {
    memset(ptr, 0, capacity);
    return ptr;
 }
+
+void vector_debug(char* name, void* vec) {
+   VectorHeader* header = vector_header(vec);
+   printf("Vector %s:\n", name);
+   printf("  capacity: %ld\n", header->capacity);
+   printf("  length: %ld\n", header->length);
+}
