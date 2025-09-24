@@ -1,5 +1,6 @@
 #include "vulkan/vulkan_core.h"
 #include <assert.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -31,7 +32,7 @@ typedef struct {
    VkPhysicalDevice physicalDevice;
    VkDevice device;
    VkQueue graphicsQueue;
-   VkQueue presentationQueue;
+   VkQueue presentQueue;
    
    VkSurfaceKHR surface;
    VkSwapchainKHR swapChain;
@@ -48,6 +49,10 @@ typedef struct {
 
    VkCommandPool commandPool;
    VkCommandBuffer commandBuffer;
+
+   VkSemaphore imageAvailableSemaphore;
+   VkSemaphore renderFinishedSemaphore;
+   VkFence inFlightFence;
 } App;
 
 typedef struct {
@@ -122,15 +127,15 @@ bool check_validation_layers_support(void) {
    VkLayerProperties availableLayers[layerCount];
    vkEnumerateInstanceLayerProperties(&layerCount, availableLayers);
    
-   puts("Requested layers:");
-   for (Size i = 0; i < lengthof(validationLayers); i++) {
-      printf("%s\n", validationLayers[i]);
-   }
-
-   puts("Available layers:");
-   for (Size i = 0; i < lengthof(availableLayers); i++) {
-      printf("%s\n", availableLayers[i].layerName);
-   }
+   // puts("Requested layers:");
+   // for (Size i = 0; i < lengthof(validationLayers); i++) {
+   //    printf("%s\n", validationLayers[i]);
+   // }
+   //
+   // puts("Available layers:");
+   // for (Size i = 0; i < lengthof(availableLayers); i++) {
+   //    printf("%s\n", availableLayers[i].layerName);
+   // }
 
    for (int i = 0; i < lengthof(validationLayers); i++) {
       bool layerFound = false;
@@ -150,16 +155,6 @@ bool check_validation_layers_support(void) {
    }
 
    return true;
-}
-
-GLFWwindow *init_window(u32 width, u32 height) {
-   glfwInit();
-   glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
-   glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
-
-   GLFWwindow *window = glfwCreateWindow(800, 600, "Vulkan", nullptr, nullptr);
-
-   return window;
 }
 
 void create_instance(VkInstance* instance) {
@@ -417,7 +412,7 @@ void pick_physical_device(App* app) {
    }
 
    if (app->physicalDevice == VK_NULL_HANDLE) {
-      printf("failed to find suitable GPU.\n");
+      fprintf(stderr, "failed to find suitable GPU.\n");
       exit(EXIT_FAILURE);
    }
 }
@@ -454,17 +449,17 @@ void create_logical_device(App* app) {
    }
 
    if (vkCreateDevice(app->physicalDevice, &createInfo, nullptr, &app->device) != VK_SUCCESS) {
-      printf("failed to create logical device!\n");
+      fprintf(stderr, "failed to create logical device!\n");
       exit(EXIT_FAILURE);
    }
 
    vkGetDeviceQueue(app->device, indices.graphicsFamily, 0, &app->graphicsQueue);
-   vkGetDeviceQueue(app->device, indices.presentationFamily, 0, &app->presentationQueue);
+   vkGetDeviceQueue(app->device, indices.presentationFamily, 0, &app->presentQueue);
 }
 
 void create_surface(App* app) {
    if (glfwCreateWindowSurface(app->instance, app->window, nullptr, &app->surface) != VK_SUCCESS) {
-      printf("failed to create surface\n");
+      fprintf(stderr, "failed to create surface\n");
       exit(EXIT_FAILURE);
    }
 }
@@ -646,12 +641,22 @@ void create_render_pass(App* app) {
    subpass.colorAttachmentCount = 1;
    subpass.pColorAttachments = &colourAttachmentRef;
 
+   VkSubpassDependency dependency = {0};
+   dependency.srcSubpass = VK_SUBPASS_EXTERNAL;
+   dependency.dstSubpass = 0;
+   dependency.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+   dependency.srcAccessMask = 0;
+   dependency.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+   dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+
    VkRenderPassCreateInfo renderPassInfo = {0};
    renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
    renderPassInfo.attachmentCount = 1;
    renderPassInfo.pAttachments = &colourAttachment;
    renderPassInfo.subpassCount = 1;
    renderPassInfo.pSubpasses = &subpass;
+   renderPassInfo.pDependencies = &dependency;
+   renderPassInfo.dependencyCount = 1;
 
    if (vkCreateRenderPass(app->device, &renderPassInfo, nullptr, &app->renderPass) != VK_SUCCESS) {
       fprintf(stderr, "failed to create render pass.\n");
@@ -711,13 +716,13 @@ void create_command_buffer(App* app) {
    }
 }
 
-void record_command_buffer(App* app, VkCommandBuffer commandBuffer, u32 imageIndex) {
+void record_command_buffer(App* app, u32 imageIndex) {
    VkCommandBufferBeginInfo beginInfo = {0};
    beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
    beginInfo.flags = 0; // optional (but flags has to be 0)
    beginInfo.pInheritanceInfo = nullptr; // optional
 
-   if (vkBeginCommandBuffer(commandBuffer, &beginInfo) != VK_SUCCESS) {
+   if (vkBeginCommandBuffer(app->commandBuffer, &beginInfo) != VK_SUCCESS) {
       fprintf(stderr, "failed to begin recording command buffer.\n");
       exit(EXIT_FAILURE);
    }
@@ -734,9 +739,9 @@ void record_command_buffer(App* app, VkCommandBuffer commandBuffer, u32 imageInd
    renderPassInfo.clearValueCount = 1;
    renderPassInfo.pClearValues = &clearColor;
 
-   vkCmdBeginRenderPass(commandBuffer, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
+   vkCmdBeginRenderPass(app->commandBuffer, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
 
-   vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, app->graphicsPipeline);
+   vkCmdBindPipeline(app->commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, app->graphicsPipeline);
 
    VkViewport viewport = {0};
    viewport.x = 0.0f;
@@ -745,21 +750,80 @@ void record_command_buffer(App* app, VkCommandBuffer commandBuffer, u32 imageInd
    viewport.height = (float)app->swapChainExtent.height;
    viewport.minDepth = 0.0f;
    viewport.maxDepth = 1.0f;
-   vkCmdSetViewport(commandBuffer, 0, 1, &viewport);
+   vkCmdSetViewport(app->commandBuffer, 0, 1, &viewport);
 
    VkRect2D scissor = {0};
    scissor.offset = (VkOffset2D){0, 0};
    scissor.extent = app->swapChainExtent;
-   vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
+   vkCmdSetScissor(app->commandBuffer, 0, 1, &scissor);
 
-   vkCmdDraw(commandBuffer, 3, 1, 0, 0);
+   vkCmdDraw(app->commandBuffer, 3, 1, 0, 0);
 
-   vkCmdEndRenderPass(commandBuffer);
+   vkCmdEndRenderPass(app->commandBuffer);
 
-   if (vkEndCommandBuffer(commandBuffer) != VK_SUCCESS) {
+   if (vkEndCommandBuffer(app->commandBuffer) != VK_SUCCESS) {
       fprintf(stderr, "failed to record command buffer.\n");
       exit(EXIT_FAILURE);
    }
+}
+
+void create_sync_objects(App* app) {
+   VkSemaphoreCreateInfo semaphoreInfo = {0};
+   semaphoreInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+
+   VkFenceCreateInfo fenceInfo = {0};
+   fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+   fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;
+
+   if (vkCreateSemaphore(app->device, &semaphoreInfo, nullptr, &app->imageAvailableSemaphore) != VK_SUCCESS
+         || vkCreateSemaphore(app->device, &semaphoreInfo, nullptr, &app->renderFinishedSemaphore) != VK_SUCCESS
+         || vkCreateFence(app->device, &fenceInfo, nullptr, &app->inFlightFence) != VK_SUCCESS) {
+      fprintf(stderr, "failed to create semaphores.\n");
+      exit(EXIT_FAILURE);
+   }
+}
+
+void draw_frame(App* app) {
+   vkWaitForFences(app->device, 1, &app->inFlightFence, VK_TRUE, UINT64_MAX);
+   vkResetFences(app->device, 1, &app->inFlightFence);
+
+   u32 imageIndex;
+   vkAcquireNextImageKHR(app->device, app->swapChain, UINT64_MAX, app->imageAvailableSemaphore, VK_NULL_HANDLE, &imageIndex);
+
+   vkResetCommandBuffer(app->commandBuffer, 0);
+   record_command_buffer(app, imageIndex);
+
+   VkSubmitInfo submitInfo = {0};
+   submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+
+   VkSemaphore waitSemaphores[] = {app->imageAvailableSemaphore};
+   VkPipelineStageFlags waitStages[] = {VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
+   submitInfo.waitSemaphoreCount = 1;
+   submitInfo.pWaitSemaphores = waitSemaphores;
+   submitInfo.pWaitDstStageMask = waitStages;
+   submitInfo.commandBufferCount = 1;
+   submitInfo.pCommandBuffers = &app->commandBuffer;
+
+   VkSemaphore signalSemaphores[] = {app->renderFinishedSemaphore};
+   submitInfo.signalSemaphoreCount = 1;
+   submitInfo.pSignalSemaphores = signalSemaphores;
+
+   if (vkQueueSubmit(app->graphicsQueue, 1, &submitInfo, app->inFlightFence) != VK_SUCCESS) {
+      fprintf(stderr, "failed to submit draw command buffer.\n");
+      exit(EXIT_FAILURE);
+   }
+
+   VkPresentInfoKHR presentInfo = {0};
+   presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
+   presentInfo.waitSemaphoreCount = 1;
+   presentInfo.pWaitSemaphores = signalSemaphores;
+
+   VkSwapchainKHR swapChains[] = {app->swapChain};
+   presentInfo.swapchainCount = 1;
+   presentInfo.pSwapchains = swapChains;
+   presentInfo.pImageIndices = &imageIndex;
+
+   vkQueuePresentKHR(app->presentQueue, &presentInfo);
 }
 
 void init_vulkan(App* app) {
@@ -776,6 +840,17 @@ void init_vulkan(App* app) {
    create_framebuffers(app);
    create_command_pool(app);
    create_command_buffer(app);
+   create_sync_objects(app);
+}
+
+GLFWwindow *init_window(u32 width, u32 height) {
+   glfwInit();
+   glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
+   glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
+
+   GLFWwindow *window = glfwCreateWindow(800, 600, "Vulkan", nullptr, nullptr);
+
+   return window;
 }
 
 App init_app(void) {
@@ -788,6 +863,10 @@ App init_app(void) {
 }
 
 void cleanup(App* app) {
+   vkDestroySemaphore(app->device, app->imageAvailableSemaphore, nullptr);
+   vkDestroySemaphore(app->device, app->renderFinishedSemaphore, nullptr);
+   vkDestroyFence(app->device, app->inFlightFence, nullptr);
+
    vkDestroyCommandPool(app->device, app->commandPool, nullptr);
 
    for (Size i = 0; i < vector_length(app->swapChainFramebuffers); i++) {
@@ -815,16 +894,21 @@ void cleanup(App* app) {
    glfwTerminate();
 }
 
+void main_loop(App* app) {
+   while (!glfwWindowShouldClose(app->window)) {
+      glfwPollEvents();
+      draw_frame(app);
+   }
+
+   vkDeviceWaitIdle(app->device);
+}
+
 int main(void) {
    Arena global_arena = arena_init(KB(500));
    global_allocator = arena_allocator(&global_arena);
 
    App app = init_app();
-
-   while (!glfwWindowShouldClose(app.window)) {
-      glfwPollEvents();
-   }
-
+   main_loop(&app);
    cleanup(&app);
    arena_destroy(&global_arena);
    return 0;
