@@ -1,8 +1,8 @@
 #include "vulkan/vulkan_core.h"
+#include <assert.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <assert.h>
 
 #include <vulkan/vulkan.h>
 
@@ -42,10 +42,12 @@ typedef struct {
    VkFormat swapChainImageFormat;
    VkExtent2D swapChainExtent;
 
-
    VkRenderPass renderPass;
    VkPipelineLayout pipelineLayout;
    VkPipeline graphicsPipeline;
+
+   VkCommandPool commandPool;
+   VkCommandBuffer commandBuffer;
 } App;
 
 typedef struct {
@@ -682,6 +684,84 @@ void create_framebuffers(App* app) {
    vector_update_length(vector_length(app->swapChainImageViews), app->swapChainFramebuffers);
 }
 
+void create_command_pool(App* app) {
+   QueueFamilyIndices queueFamilyIndices = find_queue_families(app, app->physicalDevice);
+
+   VkCommandPoolCreateInfo poolInfo = {0};
+   poolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+   poolInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
+   poolInfo.queueFamilyIndex = queueFamilyIndices.graphicsFamily;
+
+   if (vkCreateCommandPool(app->device, &poolInfo, nullptr, &app->commandPool) != VK_SUCCESS) {
+      fprintf(stderr, "failed to create command pool.\n");
+      exit(EXIT_FAILURE);
+   }
+}
+
+void create_command_buffer(App* app) {
+   VkCommandBufferAllocateInfo allocInfo = {0};
+   allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+   allocInfo.commandPool = app->commandPool;
+   allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+   allocInfo.commandBufferCount = 1;
+
+   if (vkAllocateCommandBuffers(app->device, &allocInfo, &app->commandBuffer) != VK_SUCCESS) {
+      fprintf(stderr, "failed to allocate command buffers.\n");
+      exit(EXIT_FAILURE);
+   }
+}
+
+void record_command_buffer(App* app, VkCommandBuffer commandBuffer, u32 imageIndex) {
+   VkCommandBufferBeginInfo beginInfo = {0};
+   beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+   beginInfo.flags = 0; // optional (but flags has to be 0)
+   beginInfo.pInheritanceInfo = nullptr; // optional
+
+   if (vkBeginCommandBuffer(commandBuffer, &beginInfo) != VK_SUCCESS) {
+      fprintf(stderr, "failed to begin recording command buffer.\n");
+      exit(EXIT_FAILURE);
+   }
+
+
+   VkRenderPassBeginInfo renderPassInfo = {0};
+   renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+   renderPassInfo.renderPass = app->renderPass;
+   renderPassInfo.framebuffer = app->swapChainFramebuffers[imageIndex];
+   renderPassInfo.renderArea.offset = (VkOffset2D){0, 0};
+   renderPassInfo.renderArea.extent = app->swapChainExtent;
+
+   VkClearValue clearColor = {{{0.0f, 0.0f, 0.0f, 1.0f}}};
+   renderPassInfo.clearValueCount = 1;
+   renderPassInfo.pClearValues = &clearColor;
+
+   vkCmdBeginRenderPass(commandBuffer, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
+
+   vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, app->graphicsPipeline);
+
+   VkViewport viewport = {0};
+   viewport.x = 0.0f;
+   viewport.y = 0.0f;
+   viewport.width = (float)app->swapChainExtent.width;
+   viewport.height = (float)app->swapChainExtent.height;
+   viewport.minDepth = 0.0f;
+   viewport.maxDepth = 1.0f;
+   vkCmdSetViewport(commandBuffer, 0, 1, &viewport);
+
+   VkRect2D scissor = {0};
+   scissor.offset = (VkOffset2D){0, 0};
+   scissor.extent = app->swapChainExtent;
+   vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
+
+   vkCmdDraw(commandBuffer, 3, 1, 0, 0);
+
+   vkCmdEndRenderPass(commandBuffer);
+
+   if (vkEndCommandBuffer(commandBuffer) != VK_SUCCESS) {
+      fprintf(stderr, "failed to record command buffer.\n");
+      exit(EXIT_FAILURE);
+   }
+}
+
 void init_vulkan(App* app) {
    create_instance(&app->instance);
    setup_debug_messenger(app); 
@@ -694,6 +774,8 @@ void init_vulkan(App* app) {
    create_render_pass(app);
    create_graphics_pipeline(app);
    create_framebuffers(app);
+   create_command_pool(app);
+   create_command_buffer(app);
 }
 
 App init_app(void) {
@@ -706,6 +788,8 @@ App init_app(void) {
 }
 
 void cleanup(App* app) {
+   vkDestroyCommandPool(app->device, app->commandPool, nullptr);
+
    for (Size i = 0; i < vector_length(app->swapChainFramebuffers); i++) {
       vkDestroyFramebuffer(app->device, app->swapChainFramebuffers[i], nullptr);
    }
