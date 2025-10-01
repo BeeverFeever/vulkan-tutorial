@@ -1,5 +1,6 @@
 #include "vulkan/vulkan_core.h"
 #include <assert.h>
+#include <signal.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -792,6 +793,7 @@ void create_sync_objects(App* app) {
 void draw_frame(App* app) {
    // vkDeviceWaitIdle(app->device);
    vkWaitForFences(app->device, 1, &app->inFlightFences[app->currentFrame], VK_TRUE, UINT64_MAX);
+   vkResetFences(app->device, 1, &app->inFlightFences[app->currentFrame]);
 
    u32 imageIndex = 0;
    if (vkAcquireNextImageKHR(app->device, app->swapChain, UINT64_MAX, app->imageAvailableSemaphores[app->currentFrame], VK_NULL_HANDLE, &imageIndex) != VK_SUCCESS) {
@@ -799,22 +801,24 @@ void draw_frame(App* app) {
       return;
    }
 
-   vkResetFences(app->device, 1, &app->inFlightFences[app->currentFrame]);
-
    vkResetCommandBuffer(app->commandBuffers[app->currentFrame], 0);
    record_command_buffer(app, app->commandBuffers[app->currentFrame], imageIndex);
 
    VkSubmitInfo submitInfo = {0};
    submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
 
+   VkSemaphore waitSemaphores[] = {app->imageAvailableSemaphores[app->currentFrame]};
    VkPipelineStageFlags waitStages[] = {VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
    submitInfo.waitSemaphoreCount = 1;
-   submitInfo.pWaitSemaphores = &app->imageAvailableSemaphores[app->currentFrame];
+   submitInfo.pWaitSemaphores = waitSemaphores;
    submitInfo.pWaitDstStageMask = waitStages;
+
    submitInfo.commandBufferCount = 1;
    submitInfo.pCommandBuffers = &app->commandBuffers[app->currentFrame];
+
+   VkSemaphore signalSemaphores[] = {app->renderFinishedSemaphores[app->currentFrame]};
    submitInfo.signalSemaphoreCount = 1;
-   submitInfo.pSignalSemaphores = &app->renderFinishedSemaphores[app->currentFrame];
+   submitInfo.pSignalSemaphores = signalSemaphores;
 
    if (vkQueueSubmit(app->graphicsQueue, 1, &submitInfo, app->inFlightFences[app->currentFrame]) != VK_SUCCESS) {
       fprintf(stderr, "failed to submit draw command buffer.\n");
@@ -823,10 +827,13 @@ void draw_frame(App* app) {
 
    VkPresentInfoKHR presentInfo = {0};
    presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
+
    presentInfo.waitSemaphoreCount = 1;
-   presentInfo.pWaitSemaphores = &app->renderFinishedSemaphores[app->currentFrame];
+   presentInfo.pWaitSemaphores = signalSemaphores;
+
+   VkSwapchainKHR swapChains[] = {app->swapChain};
    presentInfo.swapchainCount = 1;
-   presentInfo.pSwapchains = &app->swapChain;
+   presentInfo.pSwapchains = swapChains;
    presentInfo.pImageIndices = &imageIndex;
    presentInfo.pResults = nullptr;
 
