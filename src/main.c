@@ -1,6 +1,5 @@
 #include "vulkan/vulkan_core.h"
 #include <assert.h>
-#include <signal.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -58,6 +57,7 @@ typedef struct {
    vectorT(VkFence) inFlightFences;
 
    Size currentFrame;
+   bool framebufferResized;
 } App;
 
 typedef struct {
@@ -91,6 +91,11 @@ static VKAPI_ATTR VkBool32 VKAPI_CALL debug_callback(
    void* pUserData) {
    fprintf(stderr, "validation layer: %s\n", pCallbackData->pMessage);
    return VK_FALSE;
+}
+
+static void framebuffer_resize_callback(GLFWwindow* window, int width, int height) {
+   App* app = (App*)glfwGetWindowUserPointer(window); 
+   app->framebufferResized = true;
 }
 
 u32 clamp_u32(u32 value, u32 min, u32 max) {
@@ -275,9 +280,6 @@ bool is_device_suitable(App* app, VkPhysicalDevice device) {
    bool extensionsSupported = check_device_extension_support(app, device);
 
    bool foundSuitable = indicies.graphicsFound == true && indicies.presentationFound == true && extensionsSupported;
-   if (foundSuitable) {
-      printf("Found a suitable device.\n");
-   }
 
    return foundSuitable;
 }
@@ -796,15 +798,49 @@ void create_sync_objects(App* app) {
    }
 }
 
+void cleanup_swap_chain(App* app) {
+   for (Size i = 0; i < vector_length(app->swapChainFramebuffers); i++) {
+      vkDestroyFramebuffer(app->device, app->swapChainFramebuffers[i], nullptr);
+   }
+
+   for (Size i = 0; i < vector_length(app->swapChainImageViews); i++) {
+      vkDestroyImageView(app->device, app->swapChainImageViews[i], nullptr);
+   }
+
+   vkDestroySwapchainKHR(app->device, app->swapChain, nullptr);
+}
+
+void recreate_swap_chain(App* app) {
+   int width = 0;
+   int height = 0;
+   glfwGetFramebufferSize(app->window, &width, &height);
+   while (width == 0 || height == 0) {
+      glfwGetFramebufferSize(app->window, &width, &height);
+      glfwWaitEvents();
+   }
+
+   vkDeviceWaitIdle(app->device);
+   cleanup_swap_chain(app);
+
+   create_swap_chain(app);
+   create_image_views(app);
+   create_framebuffers(app);
+}
+
 void draw_frame(App* app) {
    vkWaitForFences(app->device, 1, &app->inFlightFences[app->currentFrame], VK_TRUE, UINT64_MAX);
-   vkResetFences(app->device, 1, &app->inFlightFences[app->currentFrame]);
 
    u32 imageIndex = 0;
-   if (vkAcquireNextImageKHR(app->device, app->swapChain, UINT64_MAX, app->imageAvailableSemaphores[app->currentFrame], VK_NULL_HANDLE, &imageIndex) != VK_SUCCESS) {
+   VkResult result = vkAcquireNextImageKHR(app->device, app->swapChain, UINT64_MAX, app->imageAvailableSemaphores[app->currentFrame], VK_NULL_HANDLE, &imageIndex);
+   if (result == VK_ERROR_OUT_OF_DATE_KHR) {
+      recreate_swap_chain(app);
+      return;
+   } else if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR) {
       fprintf(stderr, "failed to acquire swapchain image.\n");
       return;
    }
+
+   vkResetFences(app->device, 1, &app->inFlightFences[app->currentFrame]);
 
    vkResetCommandBuffer(app->commandBuffers[app->currentFrame], 0);
    record_command_buffer(app, app->commandBuffers[app->currentFrame], imageIndex);
@@ -842,7 +878,14 @@ void draw_frame(App* app) {
    presentInfo.pImageIndices = &imageIndex;
    presentInfo.pResults = nullptr;
 
-   vkQueuePresentKHR(app->presentQueue, &presentInfo);
+   result = vkQueuePresentKHR(app->presentQueue, &presentInfo);
+   if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR || app->framebufferResized) {
+      app->framebufferResized = false;
+      recreate_swap_chain(app);
+   } else if (result != VK_SUCCESS) {
+      fprintf(stderr, "failed to present swap chain image!");
+      exit(EXIT_FAILURE);
+   }
 
    app->currentFrame = (app->currentFrame + 1) % g_maxFramesInFlight;
 }
@@ -864,29 +907,33 @@ void init_vulkan(App* app) {
    create_sync_objects(app);
 }
 
-GLFWwindow *init_window(u32 width, u32 height) {
+void init_window(App* app) {
    glfwInit();
    glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
    glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
 
-   GLFWwindow *window = glfwCreateWindow(800, 600, "Vulkan", nullptr, nullptr);
-
-   return window;
+   app->window = glfwCreateWindow(app->win_width, app->win_height, "Vulkan", nullptr, nullptr);
+   glfwWindowHint(GLFW_RESIZABLE, GLFW_TRUE);
+   glfwSetWindowUserPointer(app->window, &app);
+   glfwSetFramebufferSizeCallback(app->window, framebuffer_resize_callback);
 }
 
 App init_app(void) {
    App app = {0};
    app.win_width = 800;
    app.win_height = 600;
-   app.window = init_window(app.win_width, app.win_height);
+   init_window(&app);
    init_vulkan(&app);
    return app;
 }
 
 void cleanup(App* app) {
+   cleanup_swap_chain(app);
+
    for (Size i = 0; i < vector_length(app->renderFinishedSemaphores); i++) {
       vkDestroySemaphore(app->device, app->renderFinishedSemaphores[i], nullptr);
    }
+
    for (Size i = 0; i < g_maxFramesInFlight; i++) {
       vkDestroySemaphore(app->device, app->imageAvailableSemaphores[i], nullptr);
       vkDestroyFence(app->device, app->inFlightFences[i], nullptr);
@@ -894,19 +941,10 @@ void cleanup(App* app) {
 
    vkDestroyCommandPool(app->device, app->commandPool, nullptr);
 
-   for (Size i = 0; i < vector_length(app->swapChainFramebuffers); i++) {
-      vkDestroyFramebuffer(app->device, app->swapChainFramebuffers[i], nullptr);
-   }
-
    vkDestroyPipeline(app->device, app->graphicsPipeline, nullptr);
    vkDestroyPipelineLayout(app->device, app->pipelineLayout, nullptr);
    vkDestroyRenderPass(app->device, app->renderPass, nullptr);
 
-   for (Size i = 0; i < vector_length(app->swapChainImageViews); i++) {
-      vkDestroyImageView(app->device, app->swapChainImageViews[i], nullptr);
-   }
-
-   vkDestroySwapchainKHR(app->device, app->swapChain, nullptr);
    vkDestroyDevice(app->device, nullptr);
 
    if (enableValidationLayers) {
