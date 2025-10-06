@@ -765,12 +765,12 @@ void record_command_buffer(App* app, VkCommandBuffer commandBuffer, u32 imageInd
 }
 
 void create_sync_objects(App* app) {
+   app->renderFinishedSemaphores = vector(VkSemaphore, vector_length(app->swapChainImages), &global_allocator);
    app->imageAvailableSemaphores = vector(VkSemaphore, g_maxFramesInFlight, &global_allocator);
-   app->renderFinishedSemaphores = vector(VkSemaphore, g_maxFramesInFlight, &global_allocator);
    app->inFlightFences = vector(VkFence, g_maxFramesInFlight, &global_allocator);
 
+   vector_update_length(vector_length(app->swapChainImages), app->renderFinishedSemaphores);
    vector_update_length(g_maxFramesInFlight, app->imageAvailableSemaphores);
-   vector_update_length(g_maxFramesInFlight, app->renderFinishedSemaphores);
    vector_update_length(g_maxFramesInFlight, app->inFlightFences);
 
    VkSemaphoreCreateInfo semaphoreInfo = {0};
@@ -780,9 +780,15 @@ void create_sync_objects(App* app) {
    fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
    fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;
 
+   for (Size i = 0; i < vector_length(app->swapChainImages); i++) {
+      if (vkCreateSemaphore(app->device, &semaphoreInfo, nullptr, &app->renderFinishedSemaphores[i]) != VK_SUCCESS) {
+         fprintf(stderr, "failed to create semaphores.\n");
+         exit(EXIT_FAILURE);
+      }
+   }
+
    for (Size i = 0; i < g_maxFramesInFlight; i++) {
       if (vkCreateSemaphore(app->device, &semaphoreInfo, nullptr, &app->imageAvailableSemaphores[i]) != VK_SUCCESS
-            || vkCreateSemaphore(app->device, &semaphoreInfo, nullptr, &app->renderFinishedSemaphores[i]) != VK_SUCCESS
             || vkCreateFence(app->device, &fenceInfo, nullptr, &app->inFlightFences[i]) != VK_SUCCESS) {
          fprintf(stderr, "failed to create semaphores.\n");
          exit(EXIT_FAILURE);
@@ -791,7 +797,6 @@ void create_sync_objects(App* app) {
 }
 
 void draw_frame(App* app) {
-   // vkDeviceWaitIdle(app->device);
    vkWaitForFences(app->device, 1, &app->inFlightFences[app->currentFrame], VK_TRUE, UINT64_MAX);
    vkResetFences(app->device, 1, &app->inFlightFences[app->currentFrame]);
 
@@ -816,7 +821,7 @@ void draw_frame(App* app) {
    submitInfo.commandBufferCount = 1;
    submitInfo.pCommandBuffers = &app->commandBuffers[app->currentFrame];
 
-   VkSemaphore signalSemaphores[] = {app->renderFinishedSemaphores[app->currentFrame]};
+   VkSemaphore signalSemaphores[] = {app->renderFinishedSemaphores[imageIndex]};
    submitInfo.signalSemaphoreCount = 1;
    submitInfo.pSignalSemaphores = signalSemaphores;
 
@@ -879,9 +884,11 @@ App init_app(void) {
 }
 
 void cleanup(App* app) {
+   for (Size i = 0; i < vector_length(app->renderFinishedSemaphores); i++) {
+      vkDestroySemaphore(app->device, app->renderFinishedSemaphores[i], nullptr);
+   }
    for (Size i = 0; i < g_maxFramesInFlight; i++) {
       vkDestroySemaphore(app->device, app->imageAvailableSemaphores[i], nullptr);
-      vkDestroySemaphore(app->device, app->renderFinishedSemaphores[i], nullptr);
       vkDestroyFence(app->device, app->inFlightFences[i], nullptr);
    }
 
