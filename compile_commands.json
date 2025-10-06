@@ -14,14 +14,15 @@
       "-Wno-unused-parameter",
       "-Wno-unused-function",
       "-Wno-sign-conversion",
-      "-fsanitize=undefined,address",
+      "-fsanitize=undefined",
+      "-finstrument-functions",
       "-Isrc",
       "-I/home/beever/dev/vulkan/vulkan-1.4.321.1/x86_64/include",
       "-pedantic",
-      "./src/file.c"
+      "./src/main.c"
     ],
     "directory": "/home/beever/dev/vulkan",
-    "file": "/home/beever/dev/vulkan/src/file.c"
+    "file": "/home/beever/dev/vulkan/src/main.c"
   },
   {
     "arguments": [
@@ -38,7 +39,8 @@
       "-Wno-unused-parameter",
       "-Wno-unused-function",
       "-Wno-sign-conversion",
-      "-fsanitize=undefined,address",
+      "-fsanitize=undefined",
+      "-finstrument-functions",
       "-Isrc",
       "-I/home/beever/dev/vulkan/vulkan-1.4.321.1/x86_64/include",
       "-pedantic",
@@ -62,14 +64,15 @@
       "-Wno-unused-parameter",
       "-Wno-unused-function",
       "-Wno-sign-conversion",
-      "-fsanitize=undefined,address",
+      "-fsanitize=undefined",
+      "-finstrument-functions",
       "-Isrc",
       "-I/home/beever/dev/vulkan/vulkan-1.4.321.1/x86_64/include",
       "-pedantic",
-      "./src/log.c"
+      "./src/file.c"
     ],
     "directory": "/home/beever/dev/vulkan",
-    "file": "/home/beever/dev/vulkan/src/log.c"
+    "file": "/home/beever/dev/vulkan/src/file.c"
   },
   {
     "arguments": [
@@ -86,13 +89,14 @@
       "-Wno-unused-parameter",
       "-Wno-unused-function",
       "-Wno-sign-conversion",
-      "-fsanitize=undefined,address",
+      "-fsanitize=undefined",
+      "-finstrument-functions",
       "-Isrc",
       "-I/home/beever/dev/vulkan/vulkan-1.4.321.1/x86_64/include",
       "-pedantic",
-      "./src/main.c"
+      "./src/log.c"
     ],
     "directory": "/home/beever/dev/vulkan",
-    "file": "/home/beever/dev/vulkan/src/main.c"
+    "file": "/home/beever/dev/vulkan/src/log.c"
   }
 ]
