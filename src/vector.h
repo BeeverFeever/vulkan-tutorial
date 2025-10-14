@@ -27,7 +27,7 @@ typedef struct {
  * @brief create a new vector
  *
  * @param T type of data stored in vector
- * @param c (optional) capacity of vector, defaults to VECTOR_DEFAULT_CAPACITY which is 64
+ * @param c (optional) capacity of vector, defaults to VECTOR_DEFAULT_CAPACITY
  * @param a memory allocator
  */
 #define vector(...) EXPAND(GET_MACRO(__VA_ARGS__, vector3, vector2)(__VA_ARGS__))
@@ -61,10 +61,10 @@ void *vector_ensure_capacity(void *a, Size item_count, Size item_size) {
    return h;
 }
 
-#define vector_push_back(a, v) ( \
-      (a) = vector_ensure_capacity(a, 1, sizeof(v)), \
-      (a)[vector_header(a)->length] = (v), \
-      &(a)[vector_header(a)->length++])
+#define vector_push_back(vec, value) ( \
+      (vec) = vector_ensure_capacity(vec, 1, sizeof(value)), \
+      (vec)[vector_header(vec)->length] = (value), \
+      &(vec)[vector_header(vec)->length++])
 
 bool vector_is_empty(void* vector) {
    return vector_header(vector)->length == 0;

@@ -7,7 +7,7 @@ set -xe
 cfiles=$(find ./src -type f -name "*.c")
 
 COMPILER_FLAGS="-std=c23 -g3 -Wall -Wextra -Wconversion -Wdouble-promotion -Wno-unused-parameter -Wno-unused-function -Wno-sign-conversion -fsanitize=undefined -finstrument-functions"
-INCLUDE_FLAGS="-Isrc -I$VULKAN_SDK/include"
-LINKER_FLAGS="-lcglm -lglfw -lvulkan -lxcb -lX11 -lX11-xcb -lxkbcommon -L$VULKAN_SDK/lib -pedantic"
+INCLUDE_FLAGS="-Isrc" #-I$VULKAN_SDK/include"
+LINKER_FLAGS="-lcglm -lglfw -lvulkan -lxcb -lX11 -lX11-xcb -lxkbcommon -pedantic" #-L$VULKAN_SDK/lib "
 
 cc -include defines.h $cfiles $COMPILER_FLAGS $INCLUDE_FLAGS $LINKER_FLAGS
