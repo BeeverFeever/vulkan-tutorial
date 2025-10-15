@@ -88,7 +88,7 @@ const char* requiredDeviceExtensions[] = {
 const Vertex vertices[] = {
    {{0.0f, -0.5f}, {1.0f, 0.0f, 0.0f}},
    {{0.5f, 0.5f}, {0.0f, 1.0f, 0.0f}},
-   {{-0.5f, 0.0f}, {1.0f, 0.0f, 1.0f}},
+   {{-0.5f, 0.5f}, {1.0f, 0.0f, 1.0f}},
 };
 
 #ifdef NDEBUG
@@ -769,8 +769,6 @@ void create_command_buffers(App* app) {
 void record_command_buffer(App* app, VkCommandBuffer commandBuffer, u32 imageIndex) {
    VkCommandBufferBeginInfo beginInfo = {0};
    beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-   beginInfo.flags = 0; // optional (but flags has to be 0)
-   beginInfo.pInheritanceInfo = nullptr; // optional
 
    if (vkBeginCommandBuffer(commandBuffer, &beginInfo) != VK_SUCCESS) {
       fprintf(stderr, "failed to begin recording command buffer.\n");
@@ -809,7 +807,7 @@ void record_command_buffer(App* app, VkCommandBuffer commandBuffer, u32 imageInd
    VkDeviceSize offsets[] = {0};
    vkCmdBindVertexBuffers(commandBuffer, 0, 1, vertexBuffers, offsets);
 
-   vkCmdDraw(commandBuffer, (u32)lengthof(vertices), 1, 0, 0);
+   vkCmdDraw(commandBuffer, 3, 1, 0, 0);
 
    vkCmdEndRenderPass(commandBuffer);
 
@@ -961,7 +959,7 @@ u32 find_memory_type(App* app, u32 typeFilter, VkMemoryPropertyFlags properties)
 void create_vertex_buffer(App* app) {
    VkBufferCreateInfo bufferInfo = {0};
    bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-   bufferInfo.size = lengthof(vertices);
+   bufferInfo.size = sizeof(vertices);
    bufferInfo.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
    bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 
