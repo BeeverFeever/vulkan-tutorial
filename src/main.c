@@ -984,13 +984,56 @@ void create_buffer(App* app, VkDeviceSize size, VkBufferUsageFlags usage, VkMemo
    vkBindBufferMemory(app->device, *buffer, *bufferMemory, 0);
 }
 
+void copy_buffer(App* app, VkBuffer src, VkBuffer dest, VkDeviceSize size) {
+   VkCommandBufferAllocateInfo allocInfo = {0};
+   allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+   allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+   allocInfo.commandPool = app->commandPool;
+   allocInfo.commandBufferCount = 1;
+
+   VkCommandBuffer commandBuffer;
+   vkAllocateCommandBuffers(app->device, &allocInfo, &commandBuffer);
+
+   VkCommandBufferBeginInfo beginInfo = {0};
+   beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+   beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+
+   vkBeginCommandBuffer(commandBuffer, &beginInfo);
+
+   VkBufferCopy copyRegion = {0};
+   copyRegion.srcOffset = 0; // Optional
+   copyRegion.dstOffset = 0; // Optional
+   copyRegion.size = size;
+   vkCmdCopyBuffer(commandBuffer, src, dest, 1, &copyRegion);
+   vkEndCommandBuffer(commandBuffer);
+
+   VkSubmitInfo submitInfo = {0};
+   submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+   submitInfo.commandBufferCount = 1;
+   submitInfo.pCommandBuffers = &commandBuffer;
+
+   vkQueueSubmit(app->graphicsQueue, 1, &submitInfo, VK_NULL_HANDLE);
+   vkQueueWaitIdle(app->graphicsQueue);
+
+   vkFreeCommandBuffers(app->device, app->commandPool, 1, &commandBuffer);
+}
+
 void create_vertex_buffer(App* app) {
-   create_buffer(app, sizeof(vertices), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &app->vertexBuffer, &app->vertexBufferMemory);
+   VkBuffer staginBuffer;
+   VkDeviceMemory stagingBufferMemory;
+
+   create_buffer(app, sizeof(vertices), VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &staginBuffer, &stagingBufferMemory);
 
    void* data;
-   vkMapMemory(app->device, app->vertexBufferMemory, 0, sizeof(vertices), 0, &data);
+   vkMapMemory(app->device, stagingBufferMemory, 0, sizeof(vertices), 0, &data);
    memcpy(data, vertices, sizeof(vertices));
-   vkUnmapMemory(app->device, app->vertexBufferMemory);
+   vkUnmapMemory(app->device, stagingBufferMemory);
+
+   create_buffer(app, sizeof(vertices), VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, VK_MEMORY_HEAP_DEVICE_LOCAL_BIT, &app->vertexBuffer, &app->vertexBufferMemory);
+   copy_buffer(app, staginBuffer, app->vertexBuffer, sizeof(vertices));
+
+   vkDestroyBuffer(app->device, staginBuffer, nullptr);
+   vkFreeMemory(app->device, stagingBufferMemory, nullptr);
 }
 
 void init_vulkan(App* app) {
@@ -1014,7 +1057,10 @@ void init_vulkan(App* app) {
 void init_window(App* app) {
    glfwInit();
    glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
+// makes the window auto float for me but I want it to be resizable in release
+#ifndef NDEBUG
    glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
+#endif
 
    app->window = glfwCreateWindow(app->win_width, app->win_height, "Vulkan", nullptr, nullptr);
    glfwSetFramebufferSizeCallback(app->window, framebuffer_resize_callback);
