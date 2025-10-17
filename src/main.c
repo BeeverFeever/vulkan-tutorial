@@ -1,9 +1,11 @@
 #include "vulkan/vulkan_core.h"
 #include <assert.h>
+#include <cglm/cam.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 #include <vulkan/vulkan.h>
 #include <cglm/cglm.h>
@@ -31,6 +33,14 @@ typedef struct {
 } Vertex;
 
 typedef struct {
+   mat4 model;
+   mat4 view;
+   mat4 proj;
+} UniformBufferObject;
+
+typedef struct {
+   time_t startTime;
+
    u32 win_width;
    u32 win_height;
    GLFWwindow *window;
@@ -52,6 +62,7 @@ typedef struct {
    VkExtent2D swapChainExtent;
 
    VkRenderPass renderPass;
+   VkDescriptorSetLayout descriptorSetLayout;
    VkPipelineLayout pipelineLayout;
    VkPipeline graphicsPipeline;
 
@@ -69,6 +80,13 @@ typedef struct {
    VkDeviceMemory vertexBufferMemory;
    VkBuffer indexBuffer;
    VkDeviceMemory indexBufferMemory;
+
+   vectorT(VkBuffer) uniformBuffers;
+   vectorT(VkDeviceMemory) uniformBuffersMemory;
+   vectorT(void*) uniformBuffersMapped;
+
+   VkDescriptorPool descriptorPool;
+   vectorT(VkDescriptorSet) descriptorSets;
 } App;
 
 typedef struct {
@@ -607,7 +625,7 @@ void create_graphics_pipeline(App* app) {
    rasterizer.polygonMode = VK_POLYGON_MODE_FILL;
    rasterizer.lineWidth = 1.0f;
    rasterizer.cullMode = VK_CULL_MODE_BACK_BIT;
-   rasterizer.frontFace = VK_FRONT_FACE_CLOCKWISE;
+   rasterizer.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
    rasterizer.depthBiasEnable = VK_FALSE;
 
    VkPipelineMultisampleStateCreateInfo multisampling = {0};
@@ -642,8 +660,8 @@ void create_graphics_pipeline(App* app) {
 
    VkPipelineLayoutCreateInfo pipelineLayoutInfo = {0};
    pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-   pipelineLayoutInfo.setLayoutCount = 0;
-   pipelineLayoutInfo.pushConstantRangeCount = 0;
+   pipelineLayoutInfo.setLayoutCount = 1;
+   pipelineLayoutInfo.pSetLayouts = &app->descriptorSetLayout;
 
    if (vkCreatePipelineLayout(app->device, &pipelineLayoutInfo, nullptr, &app->pipelineLayout) != VK_SUCCESS) {
       fprintf(stderr, "failed to create pipeline layout.\n");
@@ -816,6 +834,7 @@ void record_command_buffer(App* app, VkCommandBuffer commandBuffer, u32 imageInd
    vkCmdBindVertexBuffers(commandBuffer, 0, 1, vertexBuffers, offsets);
    vkCmdBindIndexBuffer(commandBuffer, app->indexBuffer, 0, VK_INDEX_TYPE_UINT16);
 
+   vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, app->pipelineLayout, 0, 1, &app->descriptorSets[app->currentFrame], 0, nullptr);
    vkCmdDrawIndexed(commandBuffer, lengthof(indices), 1, 0, 0, 0);
 
    vkCmdEndRenderPass(commandBuffer);
@@ -887,6 +906,20 @@ void recreate_swap_chain(App* app) {
    create_framebuffers(app);
 }
 
+void update_uniform_buffer(App* app) {
+   time_t now = time(nullptr) - app->startTime;
+   
+   UniformBufferObject ubo = {0};
+   glm_rotate_make(ubo.model, glm_rad(1.0f) * (float)now, (vec3){0.0f, 0.0f, 1.0f});
+   glm_lookat((vec3){2.0f, 2.0f, 2.0f}, (vec3){0.0f, 0.0f, 0.0f}, (vec3){0.0f, 0.0f, 1.0f}, ubo.view);
+   glm_perspective(glm_rad(45.0f), (float)app->swapChainExtent.width / (float)app->swapChainExtent.height, 0.1f, 10.0f, ubo.proj);
+
+   // flip upside down
+   ubo.proj[1][1] *= -1;
+
+   memcpy(app->uniformBuffersMapped[app->currentFrame], &ubo, sizeof(ubo));
+}
+
 void draw_frame(App* app) {
    vkWaitForFences(app->device, 1, &app->inFlightFences[app->currentFrame], VK_TRUE, UINT64_MAX);
 
@@ -901,6 +934,8 @@ void draw_frame(App* app) {
    }
 
    vkResetFences(app->device, 1, &app->inFlightFences[app->currentFrame]);
+
+   update_uniform_buffer(app);
 
    vkResetCommandBuffer(app->commandBuffers[app->currentFrame], 0);
    record_command_buffer(app, app->commandBuffers[app->currentFrame], imageIndex);
@@ -1065,6 +1100,96 @@ void create_index_buffer(App* app) {
    vkFreeMemory(app->device, stagingBufferMemory, nullptr);
 }
 
+void create_descriptor_set_layout(App* app) {
+   VkDescriptorSetLayoutBinding uboLayoutBinding = {0};
+   uboLayoutBinding.binding = 0;
+   uboLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+   uboLayoutBinding.descriptorCount = 1;
+   uboLayoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+
+   VkDescriptorSetLayoutCreateInfo layoutInfo = {0};
+   layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+   layoutInfo.bindingCount = 1;
+   layoutInfo.pBindings = &uboLayoutBinding;
+
+   if (vkCreateDescriptorSetLayout(app->device, &layoutInfo, nullptr, &app->descriptorSetLayout) != VK_SUCCESS) {
+      fprintf(stderr, "failed to create descriptor set layout\n");
+      exit(EXIT_FAILURE);
+   }
+}
+
+void create_uniform_buffer(App* app) {
+   VkDeviceSize bufferSize = sizeof(UniformBufferObject);
+
+    app->uniformBuffers = vector(VkBuffer, g_maxFramesInFlight, &global_allocator);
+    app->uniformBuffersMemory = vector(VkDeviceMemory, g_maxFramesInFlight, &global_allocator);
+    app->uniformBuffersMapped = vector(void*, g_maxFramesInFlight, &global_allocator);
+
+    for (Size i = 0; i < g_maxFramesInFlight; i++) {
+        create_buffer(app, bufferSize, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &app->uniformBuffers[i], &app->uniformBuffersMemory[i]);
+
+        vkMapMemory(app->device, app->uniformBuffersMemory[i], 0, bufferSize, 0, &app->uniformBuffersMapped[i]);
+
+        vector_update_length(i, app->uniformBuffersMemory);
+        vector_update_length(i, app->uniformBuffersMapped);
+        vector_update_length(i, app->uniformBuffers);
+    }
+}
+
+void create_descriptor_pool(App* app) {
+   VkDescriptorPoolSize poolSize = {0};
+   poolSize.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+   poolSize.descriptorCount = (u32)g_maxFramesInFlight;
+
+   VkDescriptorPoolCreateInfo poolInfo = {0};
+   poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+   poolInfo.poolSizeCount = 1;
+   poolInfo.pPoolSizes = &poolSize;
+   poolInfo.maxSets = (u32)g_maxFramesInFlight;
+
+   if (vkCreateDescriptorPool(app->device, &poolInfo, nullptr, &app->descriptorPool) != VK_SUCCESS) {
+      fprintf(stderr, "failed to create descriptor pool\n");
+      exit(EXIT_FAILURE);
+   }
+}
+
+void create_descriptor_sets(App* app) {
+   vectorT(VkDescriptorSetLayout) layouts = vector(VkDescriptorSetLayout, g_maxFramesInFlight, &global_allocator);
+   for (Size i = 0; i < g_maxFramesInFlight; i++) {
+      vector_push_back(layouts, app->descriptorSetLayout);
+   }
+   VkDescriptorSetAllocateInfo allocInfo = {0};
+   allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+   allocInfo.descriptorPool = app->descriptorPool;
+   allocInfo.descriptorSetCount = (u32)g_maxFramesInFlight;
+   allocInfo.pSetLayouts = layouts;
+   
+   app->descriptorSets = vector(VkDescriptorSet, g_maxFramesInFlight, &global_allocator);
+   if (vkAllocateDescriptorSets(app->device, &allocInfo, app->descriptorSets) != VK_SUCCESS) {
+      fprintf(stderr, "failed to allocate descriptor sets\n");
+      exit(EXIT_FAILURE);
+   }
+   vector_update_length(g_maxFramesInFlight, app->descriptorSets);
+
+   for (Size i = 0; i < g_maxFramesInFlight; i++) {
+      VkDescriptorBufferInfo bufferInfo = {0};
+      bufferInfo.buffer = app->uniformBuffers[i];
+      bufferInfo.offset = 0;
+      bufferInfo.range = sizeof(UniformBufferObject);
+
+      VkWriteDescriptorSet descriptorWrite = {0};
+      descriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+      descriptorWrite.dstSet = app->descriptorSets[i];
+      descriptorWrite.dstBinding = 0;
+      descriptorWrite.dstArrayElement = 0;
+      descriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+      descriptorWrite.descriptorCount = 1;
+      descriptorWrite.pBufferInfo = &bufferInfo;
+
+      vkUpdateDescriptorSets(app->device, 1, &descriptorWrite, 0, nullptr);
+   }
+}
+
 void init_vulkan(App* app) {
    create_instance(&app->instance);
    setup_debug_messenger(app); 
@@ -1075,11 +1200,15 @@ void init_vulkan(App* app) {
    create_swap_chain(app);
    create_image_views(app);
    create_render_pass(app);
+   create_descriptor_set_layout(app);
    create_graphics_pipeline(app);
    create_framebuffers(app);
    create_command_pool(app);
    create_vertex_buffer(app);
    create_index_buffer(app);
+   create_uniform_buffer(app);
+   create_descriptor_pool(app);
+   create_descriptor_sets(app);
    create_command_buffers(app);
    create_sync_objects(app);
 }
@@ -1099,6 +1228,7 @@ void init_window(App* app) {
 
 App init_app(void) {
    App app = {0};
+   app.startTime = time(nullptr);
    app.win_width = 800;
    app.win_height = 600;
    init_window(&app);
@@ -1108,6 +1238,14 @@ App init_app(void) {
 
 void cleanup(App* app) {
    cleanup_swap_chain(app);
+
+   for (Size i = 0; i < g_maxFramesInFlight; i++) {
+      vkDestroyBuffer(app->device, app->uniformBuffers[i], nullptr);
+      vkFreeMemory(app->device, app->uniformBuffersMemory[i], nullptr);
+   }
+
+   vkDestroyDescriptorPool(app->device, app->descriptorPool, nullptr);
+   vkDestroyDescriptorSetLayout(app->device, app->descriptorSetLayout, nullptr);
 
    vkDestroyBuffer(app->device, app->vertexBuffer, nullptr);
    vkFreeMemory(app->device, app->vertexBufferMemory, nullptr);
