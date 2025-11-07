@@ -21,6 +21,6 @@ typedef struct {
    void* ctx;
 } Allocator;
 
-Allocator arena_allocator(Arena* a);
-Allocator debug_arena_allocator(Arena* a);
-Allocator stdlib_allocator();
+Allocator arena_allocator_init(Arena* a);
+Allocator debug_arena_allocator_init(Arena* a);
+Allocator stdlib_allocator_init();

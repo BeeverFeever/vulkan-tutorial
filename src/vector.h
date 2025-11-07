@@ -1,9 +1,7 @@
 #pragma once
 
-#include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
 
 #include "memory.h"
 
@@ -38,7 +36,7 @@ typedef struct {
 #define vector_length(a) (vector_header(a)->length)
 #define vector_capacity(a) (vector_header(a)->capacity)
 
-void *vector_ensure_capacity(void *a, Size item_count, Size item_size) {
+static void* _ensure_capacity(void *a, Size item_count, Size item_size) {
    VectorHeader *h = vector_header(a);
    Size desired_capacity = h->length + item_count;
 
@@ -62,9 +60,15 @@ void *vector_ensure_capacity(void *a, Size item_count, Size item_size) {
 }
 
 #define vector_push_back(vec, value) ( \
-      (vec) = vector_ensure_capacity(vec, 1, sizeof(value)), \
+      (vec) = _ensure_capacity(vec, 1, sizeof(value)), \
       (vec)[vector_header(vec)->length] = (value), \
       &(vec)[vector_header(vec)->length++])
+
+// void vector_push_back(void** vec, void* value) {
+//    VectorHeader* header = vector_header(vec);
+//    vec = _ensure_capacity(vec, 1, sizeof(value));
+//    vec[header->length] = value;
+// }
 
 bool vector_is_empty(void* vector) {
    return vector_header(vector)->length == 0;

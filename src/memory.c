@@ -65,7 +65,7 @@ void arena_free_all(Arena* a) {
    a->offset = 0;
 }
 
-Allocator arena_allocator(Arena* a) {
+Allocator arena_allocator_init(Arena* a) {
    Allocator allocator = {0};
    allocator.alloc = arena_allocator_alloc;
    allocator.free = arena_allocator_free; 
@@ -88,7 +88,7 @@ static void debug_arena_allocator_free(Size size, void* ptr, void* ctx) {
    (void)ctx;
 }
 
-Allocator debug_arena_allocator(Arena* a) {
+Allocator debug_arena_allocator_init(Arena* a) {
    Allocator allocator = {0};
    allocator.alloc = debug_arena_allocator_alloc;
    allocator.free = debug_arena_allocator_free;
@@ -109,7 +109,7 @@ static void stdlib_allocator_free(Size size, void* ptr, void* ctx) {
    free(ptr);
 }
 
-Allocator stdlib_allocator() {
+Allocator stdlib_allocator_init() {
    Allocator allocator = {0};
    allocator.alloc = stdlib_allocator_alloc;
    allocator.free = stdlib_allocator_free;
