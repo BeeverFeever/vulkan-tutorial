@@ -1,4 +1,4 @@
-#include "queuefamilies.h"
+#include "queues.h"
 
 QueueFamilyIndices find_queue_families(VkPhysicalDevice device, VkSurfaceKHR surface) {
    QueueFamilyIndices indices = {0};

@@ -1,6 +1,7 @@
 #include "vulk/renderer.h"
 #include "vulk/window.h"
 #include "memory.h"
+#include <GLFW/glfw3.h>
 
 void framebuffer_resize_callback(GLFWwindow* win_handle, int width, int height) {
    Window* win = (Window*)glfwGetWindowUserPointer(win_handle);

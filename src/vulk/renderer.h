@@ -8,11 +8,12 @@
 
 #include "../vector.h"
 
-#include "swapchain.h"
-#include "queues.h"
-#include "pipeline.h"
-#include "window.h"
 #include "device.h"
+#include "pipeline.h"
+#include "queues.h"
+#include "swapchain.h"
+#include "window.h"
+#include "descriptorSets.h"
 
 typedef struct {
    time_t startTime;
@@ -29,8 +30,16 @@ typedef struct {
    Swapchain swapchain;
    Queues queues;
    GraphicsPipeline gPipe;
+
+   // Buffers, idk if this is the right way to go about this
+   VkBuffer vertexBuffer;
+   VkDeviceMemory vertexBufferMemory;
+   VkBuffer indexBuffer;
+   VkDeviceMemory indexBufferMemory;
+
+   DescriptorState descriptorState;
 } Renderer;
 
-Renderer renderer_init(Size width, Size height, Allocator* allocator);
-void renderer_main_loop(Renderer* renderer);
-void renderer_cleanup(Renderer* renderer);
+Renderer renderer_init(Size width, Size height, Allocator *allocator);
+void renderer_main_loop(Renderer *renderer);
+void renderer_cleanup(Renderer *renderer);

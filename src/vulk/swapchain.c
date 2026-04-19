@@ -4,7 +4,7 @@
 #include <vulkan/vulkan.h>
 
 #include "memory.h"
-#include "queuefamilies.h"
+#include "queues.h"
 
 static u32 clamp_u32(u32 value, u32 min, u32 max) {
    if (value >= max) {

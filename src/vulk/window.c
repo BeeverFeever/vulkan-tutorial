@@ -19,7 +19,7 @@ Window window_init(Size width, Size height, String name) {
 }
 
 void window_create_surface(Window* window, VkInstance instance) {
-   if (glfwCreateWindowSurface(instance, window->handle, nullptr, window->surface) != VK_SUCCESS) {
+   if (glfwCreateWindowSurface(instance, window->handle, nullptr, &window->surface) != VK_SUCCESS) {
       fprintf(stderr, "failed to create surface\n");
       exit(EXIT_FAILURE);
    }

@@ -7,6 +7,7 @@
 #include <vulkan/vulkan.h>
 
 #include "device.h"
+#include "vulkan/vulkan_core.h"
 
 static u32 find_memory_type(VkPhysicalDevice physicalDevice, u32 typeFilter, VkMemoryPropertyFlags properties) {
    VkPhysicalDeviceMemoryProperties memProperties;
@@ -84,7 +85,7 @@ void buffer_copy(VkQueue graphicsQueue, VkCommandPool commandPool, VkDevice devi
    vkFreeCommandBuffers(device, commandPool, 1, &commandBuffer);
 }
 
-void buffer_create_vertex(Device* device, void* vertices) {
+void buffer_create_vertex(Device* device, Queues* queues, VkCommandPool* commandPool, void* vertices, VkBuffer* vertexBuffer, VkDeviceMemory* vertexBufferMemory) {
    VkBuffer stagingBuffer;
    VkDeviceMemory stagingBufferMemory;
 
@@ -99,14 +100,14 @@ void buffer_create_vertex(Device* device, void* vertices) {
    memcpy(data, vertices, sizeof(vertices));
    vkUnmapMemory(device->logical, stagingBufferMemory);
 
-   buffer_create(sizeof(vertices),
+   buffer_create(device,
+         sizeof(vertices),
          VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
          VK_MEMORY_HEAP_DEVICE_LOCAL_BIT,
-         &vertexBuffer,
-         &vertexBufferMemory);
-   buffer_copy(queues.graphics, commandPool, device->logical, srcBuf, destBuf, sizeof(srcBuf));
+         vertexBuffer,
+         vertexBufferMemory);
+   buffer_copy(queues->graphicsQueue, *commandPool, device->logical, stagingBuffer, vertices, sizeof(vertices));
 
    vkDestroyBuffer(device->logical, stagingBuffer, nullptr);
    vkFreeMemory(device->logical, stagingBufferMemory, nullptr);
 }
-

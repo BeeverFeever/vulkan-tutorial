@@ -7,6 +7,7 @@
 #include "commands.h"
 #include "pipeline.h"
 #include "commands.h"
+#include "vulk/buffers.h"
 
 static VKAPI_ATTR VkBool32 VKAPI_CALL debug_callback(
    VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
@@ -154,16 +155,9 @@ Renderer renderer_init(Size width, Size height, Allocator* allocator) {
    swapchain_create_framebuffers(&r.swapchain, r.device.logical, r.gPipe.renderPass, allocator);
    command_pool_create(&r.commandPool, r.device.physical, r.device.logical, r.window.surface);   
 
-   // create_logical_device(app);
-   // create_swap_chain(app);
-   // create_image_views(app);
-   // create_render_pass(app);
-   // create_descriptor_set_layout(app);
-   // create_graphics_pipeline(app);
-   // create_framebuffers(app);
-   // create_command_pool(app);
-   create_vertex_buffer(app);
-   create_index_buffer(app);
+   r.descriptorState = descriptor_pool_create(r.device, const DescriptorSetLayoutDesc* desc, u32 framesInFlight) {
+   descriptor_pool_create(r.device, r.descriptorPool);
+
    create_uniform_buffer(app);
    create_descriptor_pool(app);
    create_descriptor_sets(app);
