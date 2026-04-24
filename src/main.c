@@ -1,4 +1,3 @@
-#include "vulkan/vulkan_core.h"
 #include <assert.h>
 #include <cglm/cam.h>
 #include <stdint.h>
@@ -17,15 +16,10 @@
 #include "memory.h"
 #include "file.h"
 
-static const Size g_maxFramesInFlight = 2;
+#include "vulk/config.h"
+#include "vulk/device.h"
 
-#define Optional(T) struct Optional##T { bool ok; T* value; }
-#define get_value(o) *((o).value)
-#define set_value(o,v) do { \
-      (o).ok = true; \
-      *(o).value = v; \
-   } while (0)
-#define is_ok(o) ((o).ok)
+static const Size g_maxFramesInFlight = 2;
 
 typedef struct {
    vec2 pos;
@@ -47,10 +41,8 @@ typedef struct {
 
    VkInstance instance;
    VkDebugUtilsMessengerEXT debugMessenger;
-   VkPhysicalDevice physicalDevice;
-   VkDevice device;
-   VkQueue graphicsQueue;
-   VkQueue presentQueue;
+   Device devices;
+   Queues queues;
    
    VkSurfaceKHR surface;
    VkSwapchainKHR swapChain;
@@ -89,22 +81,6 @@ typedef struct {
    vectorT(VkDescriptorSet) descriptorSets;
 } App;
 
-typedef struct {
-   u32 graphicsFamily;
-   u32 presentationFamily;
-
-   bool graphicsFound;
-   bool presentationFound;
-} QueueFamilyIndices;
-
-const char* validationLayers[] = {
-   "VK_LAYER_KHRONOS_validation"
-};
-
-const char* requiredDeviceExtensions[] = {
-   "VK_KHR_swapchain"
-};
-
 constexpr Vertex vertices[] = {
    {{-0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}},
    {{0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}},
@@ -115,12 +91,6 @@ constexpr Vertex vertices[] = {
 constexpr u16 indices[] = {
    0, 1, 2, 2, 3, 0,
 };
-
-#ifdef NDEBUG
-   const bool enableValidationLayers = false;
-#else
-   const bool enableValidationLayers = true;
-#endif
 
 Allocator global_allocator = {0};
 
@@ -263,74 +233,13 @@ void setup_debug_messenger(App* app) {
    }
 }
 
-QueueFamilyIndices find_queue_families(App* app, VkPhysicalDevice device) {
-   QueueFamilyIndices indices = {0};
-
-   u32 queueFamilyCount = 0;
-   vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, nullptr);
-
-   VkQueueFamilyProperties queueFamilies[queueFamilyCount] = {};
-   vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, queueFamilies);
-
-   for (u32 i = 0; i < lengthof(queueFamilies); i++) {
-      if (queueFamilies[i].queueFlags & VK_QUEUE_GRAPHICS_BIT) {
-         indices.graphicsFamily = i;
-         indices.graphicsFound = true;
-      }
-
-      VkBool32 presentationSupport = false;
-      vkGetPhysicalDeviceSurfaceSupportKHR(device, i, app->surface, &presentationSupport);
-
-      if (presentationSupport) {
-         indices.presentationFamily = i;
-         indices.presentationFound = true;
-      }
-
-      if (indices.graphicsFamily == true || indices.presentationFound == true) {
-         break;
-      }
-   }
-   return indices;
-}
-
-bool check_device_extension_support(App* app, VkPhysicalDevice device) {
-   u32 extensionCount = 0;
-   vkEnumerateDeviceExtensionProperties(device, nullptr, &extensionCount, nullptr);
-
-   VkExtensionProperties availableExtensions[extensionCount] = {};
-   vkEnumerateDeviceExtensionProperties(device, nullptr, &extensionCount, availableExtensions);
-
-   bool extensionsSupported = false;
-   for (Size i = 0; i < extensionCount; i++) {
-      const char* extension = availableExtensions[i].extensionName;
-      for (Size j = 0; j < lengthof(requiredDeviceExtensions); j++) {
-         Size ncmp = strlen(extension) < strlen(availableExtensions[i].extensionName) ? strlen(extension) : strlen(availableExtensions[i].extensionName);
-         if (!strncmp(extension, availableExtensions[i].extensionName, ncmp)) {
-            extensionsSupported = true;
-         }
-      }
-   }
-
-   return extensionsSupported;
-}
-
-bool is_device_suitable(App* app, VkPhysicalDevice device) {
-   QueueFamilyIndices indicies = find_queue_families(app, device);
-
-   bool extensionsSupported = check_device_extension_support(app, device);
-
-   bool foundSuitable = indicies.graphicsFound == true && indicies.presentationFound == true && extensionsSupported;
-
-   return foundSuitable;
-}
-
 VkSurfaceFormatKHR choose_swap_surface_format(App* app) {
    u32 formatCount;
-   vkGetPhysicalDeviceSurfaceFormatsKHR(app->physicalDevice, app->surface, &formatCount, nullptr);
+   vkGetPhysicalDeviceSurfaceFormatsKHR(app->devices.physical, app->surface, &formatCount, nullptr);
    assert(formatCount > 0);
 
    VkSurfaceFormatKHR surfaceFormats[formatCount] = {};
-   vkGetPhysicalDeviceSurfaceFormatsKHR(app->physicalDevice, app->surface, &formatCount, surfaceFormats);
+   vkGetPhysicalDeviceSurfaceFormatsKHR(app->devices.physical, app->surface, &formatCount, surfaceFormats);
 
    for (Size i = 0; i < formatCount; i++) {
       VkSurfaceFormatKHR currentFormat = surfaceFormats[i];
@@ -344,11 +253,11 @@ VkSurfaceFormatKHR choose_swap_surface_format(App* app) {
 
 VkPresentModeKHR choose_swap_present_mode(App* app) {
    u32 presentModeCount;
-   vkGetPhysicalDeviceSurfacePresentModesKHR(app->physicalDevice, app->surface, &presentModeCount, nullptr);
+   vkGetPhysicalDeviceSurfacePresentModesKHR(app->devices.physical, app->surface, &presentModeCount, nullptr);
    assert(presentModeCount > 0);
 
    VkPresentModeKHR presentModes[presentModeCount] = {};
-   vkGetPhysicalDeviceSurfacePresentModesKHR(app->physicalDevice, app->surface, &presentModeCount, presentModes);
+   vkGetPhysicalDeviceSurfacePresentModesKHR(app->devices.physical, app->surface, &presentModeCount, presentModes);
 
    for (Size i = 0; i < presentModeCount; i++) {
       if (presentModes[i] == VK_PRESENT_MODE_MAILBOX_KHR) {
@@ -379,7 +288,7 @@ VkExtent2D choose_swap_extent(App* app, VkSurfaceCapabilitiesKHR capabilities) {
 
 void create_swap_chain(App* app) {
    VkSurfaceCapabilitiesKHR capabilities;
-   vkGetPhysicalDeviceSurfaceCapabilitiesKHR(app->physicalDevice, app->surface, &capabilities);
+   vkGetPhysicalDeviceSurfaceCapabilitiesKHR(app->devices.physical, app->surface, &capabilities);
 
    VkSurfaceFormatKHR surfaceFormat = choose_swap_surface_format(app);
    VkPresentModeKHR presentMode = choose_swap_present_mode(app);
@@ -400,7 +309,7 @@ void create_swap_chain(App* app) {
    createInfo.imageArrayLayers = 1;
    createInfo.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
 
-   QueueFamilyIndices indices = find_queue_families(app, app->physicalDevice);
+   QueueFamilyIndices indices = find_queue_families(app->devices.physical, app->surface);
    uint32_t queueFamilyIndices[] = {indices.graphicsFamily, indices.presentationFamily};
 
    if (indices.graphicsFamily != indices.presentationFamily) {
@@ -417,82 +326,20 @@ void create_swap_chain(App* app) {
    createInfo.clipped = VK_TRUE;
    createInfo.oldSwapchain = VK_NULL_HANDLE;
 
-   if (vkCreateSwapchainKHR(app->device, &createInfo, nullptr, &app->swapChain)) {
+   if (vkCreateSwapchainKHR(app->devices.logical, &createInfo, nullptr, &app->swapChain)) {
       fprintf(stderr, "failed to create swapchain\n");
       exit(EXIT_FAILURE);
    }
 
-   vkGetSwapchainImagesKHR(app->device, app->swapChain, &imageCount, nullptr);
+   vkGetSwapchainImagesKHR(app->devices.logical, app->swapChain, &imageCount, nullptr);
    app->swapChainImages = vector(VkImage, imageCount, &global_allocator);
-   vkGetSwapchainImagesKHR(app->device, app->swapChain, &imageCount, app->swapChainImages);
+   vkGetSwapchainImagesKHR(app->devices.logical, app->swapChain, &imageCount, app->swapChainImages);
    vector_update_length(imageCount, app->swapChainImages);
 
    app->swapChainImageFormat = surfaceFormat.format;
    app->swapChainExtent = extent;
 }
 
-void pick_physical_device(App* app) {
-   u32 deviceCount = 0;
-   vkEnumeratePhysicalDevices(app->instance, &deviceCount, nullptr);
-
-   if (deviceCount == 0) {
-      printf("No device found.");
-   }
-
-   VkPhysicalDevice devices[deviceCount] = {};
-   vkEnumeratePhysicalDevices(app->instance, &deviceCount, devices);
-   for (Size i = 0; i < lengthof(devices); i++) {
-      if (is_device_suitable(app, devices[i])) {
-         app->physicalDevice = devices[i];
-         break;
-      }
-   }
-
-   if (app->physicalDevice == VK_NULL_HANDLE) {
-      fprintf(stderr, "failed to find suitable GPU.\n");
-      exit(EXIT_FAILURE);
-   }
-}
-
-void create_logical_device(App* app) {
-   QueueFamilyIndices indices = find_queue_families(app, app->physicalDevice);
-
-   u32 uniqueQueueFamilies[2] = {indices.graphicsFamily, indices.presentationFamily};
-
-   float queuePriority = 1.0f;
-   VkDeviceQueueCreateInfo queueCreateInfos[2] = {0};
-   for (Size i = 0; i < lengthof(queueCreateInfos); i++) {
-      queueCreateInfos[i].sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
-      queueCreateInfos[i].queueFamilyIndex = uniqueQueueFamilies[i];
-      queueCreateInfos[i].queueCount = 1;
-      queueCreateInfos[i].pQueuePriorities = &queuePriority;
-   }
-
-   VkPhysicalDeviceFeatures deviceFeatures = {0};
-
-   VkDeviceCreateInfo createInfo = {0};
-   createInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
-   createInfo.pQueueCreateInfos = queueCreateInfos;
-   createInfo.queueCreateInfoCount = 1;
-   createInfo.pEnabledFeatures = &deviceFeatures;
-   createInfo.enabledExtensionCount = lengthof(requiredDeviceExtensions);
-   createInfo.ppEnabledExtensionNames = requiredDeviceExtensions;
-
-   if (enableValidationLayers) {
-       createInfo.enabledLayerCount = (u32)(lengthof(validationLayers));
-       createInfo.ppEnabledLayerNames = validationLayers;
-   } else {
-       createInfo.enabledLayerCount = 0;
-   }
-
-   if (vkCreateDevice(app->physicalDevice, &createInfo, nullptr, &app->device) != VK_SUCCESS) {
-      fprintf(stderr, "failed to create logical device!\n");
-      exit(EXIT_FAILURE);
-   }
-
-   vkGetDeviceQueue(app->device, indices.graphicsFamily, 0, &app->graphicsQueue);
-   vkGetDeviceQueue(app->device, indices.presentationFamily, 0, &app->presentQueue);
-}
 
 void create_surface(App* app) {
    if (glfwCreateWindowSurface(app->instance, app->window, nullptr, &app->surface) != VK_SUCCESS) {
@@ -520,7 +367,7 @@ void create_image_views(App* app) {
       createInfo.subresourceRange.baseArrayLayer = 0;
       createInfo.subresourceRange.layerCount = 1;
 
-      if (vkCreateImageView(app->device, &createInfo, nullptr, &app->swapChainImageViews[i]) != VK_SUCCESS) {
+      if (vkCreateImageView(app->devices.logical, &createInfo, nullptr, &app->swapChainImageViews[i]) != VK_SUCCESS) {
          fprintf(stderr, "failed to create image views\n");
          exit(EXIT_FAILURE);
       }
@@ -535,7 +382,7 @@ VkShaderModule create_shader_module(App* app, u32* code, Size codeLength) {
    createInfo.pCode = code;
 
    VkShaderModule shaderModule;
-   if (vkCreateShaderModule(app->device, &createInfo, nullptr, &shaderModule) != VK_SUCCESS) {
+   if (vkCreateShaderModule(app->devices.logical, &createInfo, nullptr, &shaderModule) != VK_SUCCESS) {
       fprintf(stderr, "failed to create shader module.\n");
       exit(EXIT_FAILURE);
    }
@@ -663,7 +510,7 @@ void create_graphics_pipeline(App* app) {
    pipelineLayoutInfo.setLayoutCount = 1;
    pipelineLayoutInfo.pSetLayouts = &app->descriptorSetLayout;
 
-   if (vkCreatePipelineLayout(app->device, &pipelineLayoutInfo, nullptr, &app->pipelineLayout) != VK_SUCCESS) {
+   if (vkCreatePipelineLayout(app->devices.logical, &pipelineLayoutInfo, nullptr, &app->pipelineLayout) != VK_SUCCESS) {
       fprintf(stderr, "failed to create pipeline layout.\n");
       exit(EXIT_FAILURE);
    }
@@ -684,13 +531,13 @@ void create_graphics_pipeline(App* app) {
    pipelineInfo.renderPass = app->renderPass;
    pipelineInfo.subpass = 0;
 
-   if (vkCreateGraphicsPipelines(app->device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &app->graphicsPipeline) != VK_SUCCESS) {
+   if (vkCreateGraphicsPipelines(app->devices.logical, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &app->graphicsPipeline) != VK_SUCCESS) {
       fprintf(stderr, "failed to create graphics pipeline.\n");
       exit(EXIT_FAILURE);
    }
 
-   vkDestroyShaderModule(app->device, vertShaderModule, nullptr);
-   vkDestroyShaderModule(app->device, fragShaderModule, nullptr);
+   vkDestroyShaderModule(app->devices.logical, vertShaderModule, nullptr);
+   vkDestroyShaderModule(app->devices.logical, fragShaderModule, nullptr);
 }
 
 void create_render_pass(App* app) {
@@ -730,7 +577,7 @@ void create_render_pass(App* app) {
    renderPassInfo.pDependencies = &dependency;
    renderPassInfo.dependencyCount = 1;
 
-   if (vkCreateRenderPass(app->device, &renderPassInfo, nullptr, &app->renderPass) != VK_SUCCESS) {
+   if (vkCreateRenderPass(app->devices.logical, &renderPassInfo, nullptr, &app->renderPass) != VK_SUCCESS) {
       fprintf(stderr, "failed to create render pass.\n");
       exit(EXIT_FAILURE);
    }
@@ -753,7 +600,7 @@ void create_framebuffers(App* app) {
       framebufferCreateInfo.height = app->swapChainExtent.height;
       framebufferCreateInfo.layers = 1;
 
-      if (vkCreateFramebuffer(app->device, &framebufferCreateInfo, nullptr, &app->swapChainFramebuffers[i]) != VK_SUCCESS) {
+      if (vkCreateFramebuffer(app->devices.logical, &framebufferCreateInfo, nullptr, &app->swapChainFramebuffers[i]) != VK_SUCCESS) {
          fprintf(stderr, "failed to create framebuffer.\n");
          exit(EXIT_FAILURE);
       }
@@ -762,14 +609,14 @@ void create_framebuffers(App* app) {
 }
 
 void create_command_pool(App* app) {
-   QueueFamilyIndices queueFamilyIndices = find_queue_families(app, app->physicalDevice);
+   QueueFamilyIndices queueFamilyIndices = find_queue_families(app->devices.physical, app->surface);
 
    VkCommandPoolCreateInfo poolInfo = {0};
    poolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
    poolInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
    poolInfo.queueFamilyIndex = queueFamilyIndices.graphicsFamily;
 
-   if (vkCreateCommandPool(app->device, &poolInfo, nullptr, &app->commandPool) != VK_SUCCESS) {
+   if (vkCreateCommandPool(app->devices.logical, &poolInfo, nullptr, &app->commandPool) != VK_SUCCESS) {
       fprintf(stderr, "failed to create command pool.\n");
       exit(EXIT_FAILURE);
    }
@@ -785,7 +632,7 @@ void create_command_buffers(App* app) {
    allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
    allocInfo.commandBufferCount = (u32)vector_length(app->commandBuffers);
 
-   if (vkAllocateCommandBuffers(app->device, &allocInfo, app->commandBuffers) != VK_SUCCESS) {
+   if (vkAllocateCommandBuffers(app->devices.logical, &allocInfo, app->commandBuffers) != VK_SUCCESS) {
       fprintf(stderr, "failed to allocate command buffers.\n");
       exit(EXIT_FAILURE);
    }
@@ -862,15 +709,15 @@ void create_sync_objects(App* app) {
    fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;
 
    for (Size i = 0; i < vector_length(app->swapChainImages); i++) {
-      if (vkCreateSemaphore(app->device, &semaphoreInfo, nullptr, &app->renderFinishedSemaphores[i]) != VK_SUCCESS) {
+      if (vkCreateSemaphore(app->devices.logical, &semaphoreInfo, nullptr, &app->renderFinishedSemaphores[i]) != VK_SUCCESS) {
          fprintf(stderr, "failed to create semaphores.\n");
          exit(EXIT_FAILURE);
       }
    }
 
    for (Size i = 0; i < g_maxFramesInFlight; i++) {
-      if (vkCreateSemaphore(app->device, &semaphoreInfo, nullptr, &app->imageAvailableSemaphores[i]) != VK_SUCCESS
-            || vkCreateFence(app->device, &fenceInfo, nullptr, &app->inFlightFences[i]) != VK_SUCCESS) {
+      if (vkCreateSemaphore(app->devices.logical, &semaphoreInfo, nullptr, &app->imageAvailableSemaphores[i]) != VK_SUCCESS
+            || vkCreateFence(app->devices.logical, &fenceInfo, nullptr, &app->inFlightFences[i]) != VK_SUCCESS) {
          fprintf(stderr, "failed to create semaphores.\n");
          exit(EXIT_FAILURE);
       }
@@ -879,14 +726,14 @@ void create_sync_objects(App* app) {
 
 void cleanup_swap_chain(App* app) {
    for (Size i = 0; i < vector_length(app->swapChainFramebuffers); i++) {
-      vkDestroyFramebuffer(app->device, app->swapChainFramebuffers[i], nullptr);
+      vkDestroyFramebuffer(app->devices.logical, app->swapChainFramebuffers[i], nullptr);
    }
 
    for (Size i = 0; i < vector_length(app->swapChainImageViews); i++) {
-      vkDestroyImageView(app->device, app->swapChainImageViews[i], nullptr);
+      vkDestroyImageView(app->devices.logical, app->swapChainImageViews[i], nullptr);
    }
 
-   vkDestroySwapchainKHR(app->device, app->swapChain, nullptr);
+   vkDestroySwapchainKHR(app->devices.logical, app->swapChain, nullptr);
 }
 
 void recreate_swap_chain(App* app) {
@@ -898,7 +745,7 @@ void recreate_swap_chain(App* app) {
       glfwWaitEvents();
    }
 
-   vkDeviceWaitIdle(app->device);
+   vkDeviceWaitIdle(app->devices.logical);
    cleanup_swap_chain(app);
 
    create_swap_chain(app);
@@ -921,10 +768,10 @@ void update_uniform_buffer(App* app) {
 }
 
 void draw_frame(App* app) {
-   vkWaitForFences(app->device, 1, &app->inFlightFences[app->currentFrame], VK_TRUE, UINT64_MAX);
+   vkWaitForFences(app->devices.logical, 1, &app->inFlightFences[app->currentFrame], VK_TRUE, UINT64_MAX);
 
    u32 imageIndex = 0;
-   VkResult result = vkAcquireNextImageKHR(app->device, app->swapChain, UINT64_MAX, app->imageAvailableSemaphores[app->currentFrame], VK_NULL_HANDLE, &imageIndex);
+   VkResult result = vkAcquireNextImageKHR(app->devices.logical, app->swapChain, UINT64_MAX, app->imageAvailableSemaphores[app->currentFrame], VK_NULL_HANDLE, &imageIndex);
    if (result == VK_ERROR_OUT_OF_DATE_KHR) {
       recreate_swap_chain(app);
       return;
@@ -933,7 +780,7 @@ void draw_frame(App* app) {
       return;
    }
 
-   vkResetFences(app->device, 1, &app->inFlightFences[app->currentFrame]);
+   vkResetFences(app->devices.logical, 1, &app->inFlightFences[app->currentFrame]);
 
    update_uniform_buffer(app);
 
@@ -956,7 +803,7 @@ void draw_frame(App* app) {
    submitInfo.signalSemaphoreCount = 1;
    submitInfo.pSignalSemaphores = signalSemaphores;
 
-   if (vkQueueSubmit(app->graphicsQueue, 1, &submitInfo, app->inFlightFences[app->currentFrame]) != VK_SUCCESS) {
+   if (vkQueueSubmit(app->queues.graphics, 1, &submitInfo, app->inFlightFences[app->currentFrame]) != VK_SUCCESS) {
       fprintf(stderr, "failed to submit draw command buffer.\n");
       exit(EXIT_FAILURE);
    }
@@ -973,7 +820,7 @@ void draw_frame(App* app) {
    presentInfo.pImageIndices = &imageIndex;
    presentInfo.pResults = nullptr;
 
-   result = vkQueuePresentKHR(app->presentQueue, &presentInfo);
+   result = vkQueuePresentKHR(app->queues.present, &presentInfo);
    if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR || app->framebufferResized) {
       app->framebufferResized = false;
       recreate_swap_chain(app);
@@ -987,7 +834,7 @@ void draw_frame(App* app) {
 
 u32 find_memory_type(App* app, u32 typeFilter, VkMemoryPropertyFlags properties) {
    VkPhysicalDeviceMemoryProperties memProperties;
-   vkGetPhysicalDeviceMemoryProperties(app->physicalDevice, &memProperties);
+   vkGetPhysicalDeviceMemoryProperties(app->devices.physical, &memProperties);
 
 
    for (uint32_t i = 0; i < memProperties.memoryTypeCount; i++) {
@@ -1007,25 +854,25 @@ void create_buffer(App* app, VkDeviceSize size, VkBufferUsageFlags usage, VkMemo
    bufferInfo.usage = usage;
    bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 
-   if (vkCreateBuffer(app->device, &bufferInfo, nullptr, buffer) != VK_SUCCESS) {
+   if (vkCreateBuffer(app->devices.logical, &bufferInfo, nullptr, buffer) != VK_SUCCESS) {
       fprintf(stderr, "failed to create buffer\n");
       exit(EXIT_FAILURE);
    }
 
    VkMemoryRequirements memRequirements;
-   vkGetBufferMemoryRequirements(app->device, *buffer, &memRequirements);
+   vkGetBufferMemoryRequirements(app->devices.logical, *buffer, &memRequirements);
 
    VkMemoryAllocateInfo allocInfo = {0};
    allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
    allocInfo.allocationSize = memRequirements.size;
    allocInfo.memoryTypeIndex = find_memory_type(app, memRequirements.memoryTypeBits, properties);
 
-   if (vkAllocateMemory(app->device, &allocInfo, nullptr, bufferMemory) != VK_SUCCESS) {
+   if (vkAllocateMemory(app->devices.logical, &allocInfo, nullptr, bufferMemory) != VK_SUCCESS) {
       fprintf(stderr, "failed to allocate vertex buffer memory\n");
       exit(EXIT_FAILURE);
    }
 
-   vkBindBufferMemory(app->device, *buffer, *bufferMemory, 0);
+   vkBindBufferMemory(app->devices.logical, *buffer, *bufferMemory, 0);
 }
 
 void copy_buffer(App* app, VkBuffer src, VkBuffer dest, VkDeviceSize size) {
@@ -1036,7 +883,7 @@ void copy_buffer(App* app, VkBuffer src, VkBuffer dest, VkDeviceSize size) {
    allocInfo.commandBufferCount = 1;
 
    VkCommandBuffer commandBuffer;
-   vkAllocateCommandBuffers(app->device, &allocInfo, &commandBuffer);
+   vkAllocateCommandBuffers(app->devices.logical, &allocInfo, &commandBuffer);
 
    VkCommandBufferBeginInfo beginInfo = {0};
    beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
@@ -1056,10 +903,10 @@ void copy_buffer(App* app, VkBuffer src, VkBuffer dest, VkDeviceSize size) {
    submitInfo.commandBufferCount = 1;
    submitInfo.pCommandBuffers = &commandBuffer;
 
-   vkQueueSubmit(app->graphicsQueue, 1, &submitInfo, VK_NULL_HANDLE);
-   vkQueueWaitIdle(app->graphicsQueue);
+   vkQueueSubmit(app->queues.graphics, 1, &submitInfo, VK_NULL_HANDLE);
+   vkQueueWaitIdle(app->queues.graphics);
 
-   vkFreeCommandBuffers(app->device, app->commandPool, 1, &commandBuffer);
+   vkFreeCommandBuffers(app->devices.logical, app->commandPool, 1, &commandBuffer);
 }
 
 void create_vertex_buffer(App* app) {
@@ -1069,15 +916,15 @@ void create_vertex_buffer(App* app) {
    create_buffer(app, sizeof(vertices), VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &staginBuffer, &stagingBufferMemory);
 
    void* data;
-   vkMapMemory(app->device, stagingBufferMemory, 0, sizeof(vertices), 0, &data);
+   vkMapMemory(app->devices.logical, stagingBufferMemory, 0, sizeof(vertices), 0, &data);
    memcpy(data, vertices, sizeof(vertices));
-   vkUnmapMemory(app->device, stagingBufferMemory);
+   vkUnmapMemory(app->devices.logical, stagingBufferMemory);
 
    create_buffer(app, sizeof(vertices), VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, VK_MEMORY_HEAP_DEVICE_LOCAL_BIT, &app->vertexBuffer, &app->vertexBufferMemory);
    copy_buffer(app, staginBuffer, app->vertexBuffer, sizeof(vertices));
 
-   vkDestroyBuffer(app->device, staginBuffer, nullptr);
-   vkFreeMemory(app->device, stagingBufferMemory, nullptr);
+   vkDestroyBuffer(app->devices.logical, staginBuffer, nullptr);
+   vkFreeMemory(app->devices.logical, stagingBufferMemory, nullptr);
 }
 
 void create_index_buffer(App* app) {
@@ -1088,16 +935,16 @@ void create_index_buffer(App* app) {
    create_buffer(app, bufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &stagingBuffer, &stagingBufferMemory);
 
    void* data;
-   vkMapMemory(app->device, stagingBufferMemory, 0, bufferSize, 0, &data);
+   vkMapMemory(app->devices.logical, stagingBufferMemory, 0, bufferSize, 0, &data);
    memcpy(data, indices, (size_t) bufferSize);
-   vkUnmapMemory(app->device, stagingBufferMemory);
+   vkUnmapMemory(app->devices.logical, stagingBufferMemory);
 
    create_buffer(app, bufferSize, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, &app->indexBuffer, &app->indexBufferMemory);
 
    copy_buffer(app, stagingBuffer, app->indexBuffer, bufferSize);
 
-   vkDestroyBuffer(app->device, stagingBuffer, nullptr);
-   vkFreeMemory(app->device, stagingBufferMemory, nullptr);
+   vkDestroyBuffer(app->devices.logical, stagingBuffer, nullptr);
+   vkFreeMemory(app->devices.logical, stagingBufferMemory, nullptr);
 }
 
 void create_descriptor_set_layout(App* app) {
@@ -1112,7 +959,7 @@ void create_descriptor_set_layout(App* app) {
    layoutInfo.bindingCount = 1;
    layoutInfo.pBindings = &uboLayoutBinding;
 
-   if (vkCreateDescriptorSetLayout(app->device, &layoutInfo, nullptr, &app->descriptorSetLayout) != VK_SUCCESS) {
+   if (vkCreateDescriptorSetLayout(app->devices.logical, &layoutInfo, nullptr, &app->descriptorSetLayout) != VK_SUCCESS) {
       fprintf(stderr, "failed to create descriptor set layout\n");
       exit(EXIT_FAILURE);
    }
@@ -1128,7 +975,7 @@ void create_uniform_buffer(App* app) {
     for (Size i = 0; i < g_maxFramesInFlight; i++) {
         create_buffer(app, bufferSize, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &app->uniformBuffers[i], &app->uniformBuffersMemory[i]);
 
-        vkMapMemory(app->device, app->uniformBuffersMemory[i], 0, bufferSize, 0, &app->uniformBuffersMapped[i]);
+        vkMapMemory(app->devices.logical, app->uniformBuffersMemory[i], 0, bufferSize, 0, &app->uniformBuffersMapped[i]);
 
         vector_update_length(i, app->uniformBuffersMemory);
         vector_update_length(i, app->uniformBuffersMapped);
@@ -1147,7 +994,7 @@ void create_descriptor_pool(App* app) {
    poolInfo.pPoolSizes = &poolSize;
    poolInfo.maxSets = (u32)g_maxFramesInFlight;
 
-   if (vkCreateDescriptorPool(app->device, &poolInfo, nullptr, &app->descriptorPool) != VK_SUCCESS) {
+   if (vkCreateDescriptorPool(app->devices.logical, &poolInfo, nullptr, &app->descriptorPool) != VK_SUCCESS) {
       fprintf(stderr, "failed to create descriptor pool\n");
       exit(EXIT_FAILURE);
    }
@@ -1165,7 +1012,7 @@ void create_descriptor_sets(App* app) {
    allocInfo.pSetLayouts = layouts;
    
    app->descriptorSets = vector(VkDescriptorSet, g_maxFramesInFlight, &global_allocator);
-   if (vkAllocateDescriptorSets(app->device, &allocInfo, app->descriptorSets) != VK_SUCCESS) {
+   if (vkAllocateDescriptorSets(app->devices.logical, &allocInfo, app->descriptorSets) != VK_SUCCESS) {
       fprintf(stderr, "failed to allocate descriptor sets\n");
       exit(EXIT_FAILURE);
    }
@@ -1186,7 +1033,7 @@ void create_descriptor_sets(App* app) {
       descriptorWrite.descriptorCount = 1;
       descriptorWrite.pBufferInfo = &bufferInfo;
 
-      vkUpdateDescriptorSets(app->device, 1, &descriptorWrite, 0, nullptr);
+      vkUpdateDescriptorSets(app->devices.logical, 1, &descriptorWrite, 0, nullptr);
    }
 }
 
@@ -1194,9 +1041,10 @@ void init_vulkan(App* app) {
    create_instance(&app->instance);
    setup_debug_messenger(app); 
    create_surface(app);
-   pick_physical_device(app);
 
-   create_logical_device(app);
+   app->devices.physical = device_physical_pick(app->instance, app->surface);
+   app->devices.logical = device_logical_create(&app->queues, app->surface, app->devices.physical);
+
    create_swap_chain(app);
    create_image_views(app);
    create_render_pass(app);
@@ -1240,34 +1088,34 @@ void cleanup(App* app) {
    cleanup_swap_chain(app);
 
    for (Size i = 0; i < g_maxFramesInFlight; i++) {
-      vkDestroyBuffer(app->device, app->uniformBuffers[i], nullptr);
-      vkFreeMemory(app->device, app->uniformBuffersMemory[i], nullptr);
+      vkDestroyBuffer(app->devices.logical, app->uniformBuffers[i], nullptr);
+      vkFreeMemory(app->devices.logical, app->uniformBuffersMemory[i], nullptr);
    }
 
-   vkDestroyDescriptorPool(app->device, app->descriptorPool, nullptr);
-   vkDestroyDescriptorSetLayout(app->device, app->descriptorSetLayout, nullptr);
+   vkDestroyDescriptorPool(app->devices.logical, app->descriptorPool, nullptr);
+   vkDestroyDescriptorSetLayout(app->devices.logical, app->descriptorSetLayout, nullptr);
 
-   vkDestroyBuffer(app->device, app->vertexBuffer, nullptr);
-   vkFreeMemory(app->device, app->vertexBufferMemory, nullptr);
-   vkDestroyBuffer(app->device, app->indexBuffer, nullptr);
-   vkFreeMemory(app->device, app->indexBufferMemory, nullptr);
+   vkDestroyBuffer(app->devices.logical, app->vertexBuffer, nullptr);
+   vkFreeMemory(app->devices.logical, app->vertexBufferMemory, nullptr);
+   vkDestroyBuffer(app->devices.logical, app->indexBuffer, nullptr);
+   vkFreeMemory(app->devices.logical, app->indexBufferMemory, nullptr);
 
    for (Size i = 0; i < vector_length(app->renderFinishedSemaphores); i++) {
-      vkDestroySemaphore(app->device, app->renderFinishedSemaphores[i], nullptr);
+      vkDestroySemaphore(app->devices.logical, app->renderFinishedSemaphores[i], nullptr);
    }
 
    for (Size i = 0; i < g_maxFramesInFlight; i++) {
-      vkDestroySemaphore(app->device, app->imageAvailableSemaphores[i], nullptr);
-      vkDestroyFence(app->device, app->inFlightFences[i], nullptr);
+      vkDestroySemaphore(app->devices.logical, app->imageAvailableSemaphores[i], nullptr);
+      vkDestroyFence(app->devices.logical, app->inFlightFences[i], nullptr);
    }
 
-   vkDestroyCommandPool(app->device, app->commandPool, nullptr);
+   vkDestroyCommandPool(app->devices.logical, app->commandPool, nullptr);
 
-   vkDestroyPipeline(app->device, app->graphicsPipeline, nullptr);
-   vkDestroyPipelineLayout(app->device, app->pipelineLayout, nullptr);
-   vkDestroyRenderPass(app->device, app->renderPass, nullptr);
+   vkDestroyPipeline(app->devices.logical, app->graphicsPipeline, nullptr);
+   vkDestroyPipelineLayout(app->devices.logical, app->pipelineLayout, nullptr);
+   vkDestroyRenderPass(app->devices.logical, app->renderPass, nullptr);
 
-   vkDestroyDevice(app->device, nullptr);
+   device_logical_destroy(app->devices.logical);
 
    if (enableValidationLayers) {
       destroy_debug_utils_messenger_ext(app->instance, app->debugMessenger, nullptr);
@@ -1285,7 +1133,7 @@ void main_loop(App* app) {
       draw_frame(app);
    }
 
-   vkDeviceWaitIdle(app->device);
+   vkDeviceWaitIdle(app->devices.logical);
 }
 
 int main(void) {
