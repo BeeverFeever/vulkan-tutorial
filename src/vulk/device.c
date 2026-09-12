@@ -1,11 +1,11 @@
 #include "device.h"
 
-#include <string.h>
+#include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
-#include "log.h"
-#include "config.h"
-#include "queues.h"
+#include <vulk/config.h>
+#include <vulk/queues.h>
 
 static bool check_device_extension_support(VkPhysicalDevice device) {
    u32 extensionCount = 0;
@@ -40,7 +40,9 @@ VkPhysicalDevice device_physical_pick(VkInstance instance, VkSurfaceKHR surface)
    vkEnumeratePhysicalDevices(instance, &deviceCount, nullptr);
 
    if (deviceCount == 0) {
-      VULK_LOG("No device found.");
+      //VULK_LOG("No device found.");
+      //TODO: logging and error handling
+      fprintf(stderr, "No device found\n");
    }
 
    VkPhysicalDevice devices[deviceCount] = {};
@@ -95,6 +97,7 @@ VkDevice device_logical_create(Queues* queues, VkSurfaceKHR surface, VkPhysicalD
    VkDevice device = VK_NULL_HANDLE;
 
    if (vkCreateDevice(physicalDevice, &createInfo, nullptr, &device) != VK_SUCCESS) {
+      // TODO: logging and error handling
       fprintf(stderr, "failed to create logical device!\n");
       exit(EXIT_FAILURE);
    }

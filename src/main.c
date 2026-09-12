@@ -16,10 +16,10 @@
 #include "memory.h"
 #include "file.h"
 
-#include "vulk/config.h"
-#include "vulk/device.h"
-
-static const Size g_maxFramesInFlight = 2;
+#include <vulk/callbacks.h>
+#include <vulk/config.h>
+#include <vulk/device.h>
+#include <vulk/window.h>
 
 typedef struct {
    vec2 pos;
@@ -37,7 +37,7 @@ typedef struct {
 
    u32 win_width;
    u32 win_height;
-   GLFWwindow *window;
+   Window window;
 
    VkInstance instance;
    VkDebugUtilsMessengerEXT debugMessenger;
@@ -103,9 +103,15 @@ static VKAPI_ATTR VkBool32 VKAPI_CALL debug_callback(
    return VK_FALSE;
 }
 
-static void framebuffer_resize_callback(GLFWwindow* window, int width, int height) {
+void framebuffer_resize_callback(GLFWwindow* window, int width, int height) {
    App* app = (App*)glfwGetWindowUserPointer(window); 
    app->framebufferResized = true;
+}
+
+void key_callback(GLFWwindow* window, int key, int scancode, int action, int mods) {
+   if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS) {
+      glfwSetWindowShouldClose(window, GLFW_TRUE);
+   }
 }
 
 u32 clamp_u32(u32 value, u32 min, u32 max) {
@@ -272,7 +278,7 @@ VkExtent2D choose_swap_extent(App* app, VkSurfaceCapabilitiesKHR capabilities) {
       return capabilities.currentExtent;
    } else {
       i32 width, height;
-      glfwGetFramebufferSize(app->window, &width, &height);
+      glfwGetFramebufferSize(app->window.handle, &width, &height);
 
       VkExtent2D actualExtent = {
          (u32)width,
@@ -342,7 +348,7 @@ void create_swap_chain(App* app) {
 
 
 void create_surface(App* app) {
-   if (glfwCreateWindowSurface(app->instance, app->window, nullptr, &app->surface) != VK_SUCCESS) {
+   if (glfwCreateWindowSurface(app->instance, app->window.handle, nullptr, &app->surface) != VK_SUCCESS) {
       fprintf(stderr, "failed to create surface\n");
       exit(EXIT_FAILURE);
    }
@@ -739,9 +745,9 @@ void cleanup_swap_chain(App* app) {
 void recreate_swap_chain(App* app) {
    int width = 0;
    int height = 0;
-   glfwGetFramebufferSize(app->window, &width, &height);
+   glfwGetFramebufferSize(app->window.handle, &width, &height);
    while (width == 0 || height == 0) {
-      glfwGetFramebufferSize(app->window, &width, &height);
+      glfwGetFramebufferSize(app->window.handle, &width, &height);
       glfwWaitEvents();
    }
 
@@ -1061,25 +1067,12 @@ void init_vulkan(App* app) {
    create_sync_objects(app);
 }
 
-void init_window(App* app) {
-   glfwInit();
-   glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
-// makes the window auto float for me but I want it to be resizable in release
-#ifndef NDEBUG
-   glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
-#endif
-
-   app->window = glfwCreateWindow(app->win_width, app->win_height, "Vulkan", nullptr, nullptr);
-   glfwSetFramebufferSizeCallback(app->window, framebuffer_resize_callback);
-   glfwSetWindowUserPointer(app->window, app);
-}
-
 App init_app(void) {
    App app = {0};
    app.startTime = time(nullptr);
    app.win_width = 800;
    app.win_height = 600;
-   init_window(&app);
+   app.window = window_init(app.win_width, app.win_height, str("Vulkan"));
    init_vulkan(&app);
    return app;
 }
@@ -1123,12 +1116,12 @@ void cleanup(App* app) {
 
    vkDestroySurfaceKHR(app->instance, app->surface, nullptr);
    vkDestroyInstance(app->instance, nullptr);
-   glfwDestroyWindow(app->window);
+   glfwDestroyWindow(app->window.handle);
    glfwTerminate();
 }
 
 void main_loop(App* app) {
-   while (!glfwWindowShouldClose(app->window)) {
+   while (!glfwWindowShouldClose(app->window.handle)) {
       glfwPollEvents();
       draw_frame(app);
    }

@@ -29,4 +29,3 @@ QueueFamilyIndices find_queue_families(VkPhysicalDevice device, VkSurfaceKHR sur
    }
    return indices;
 }
-
