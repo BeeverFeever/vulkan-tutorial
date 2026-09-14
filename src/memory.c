@@ -5,7 +5,9 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <unistd.h>
 #include <string.h>
+#include <execinfo.h>
 
 #define ARENA_DEFAULT_ALIGNMENT (2 * sizeof(void*))
 
@@ -77,8 +79,7 @@ Allocator arena_allocator(Arena* a) {
 
 static void* debug_arena_allocator_alloc(Size size, void* ctx) {
    printf("Memory allocation:\n");
-   printf("   %s:%d\n", __func__, __LINE__);
-   printf("   Size: %ld\n", size);
+   printf("   Size: %ld\n\n", size);
    return arena_allocator_alloc(size, ctx);
 }
 

@@ -2,6 +2,7 @@
 
 set -xe
 
+source ./vulkan-1.4.321.1/setup-env.sh
 ./compile-shaders
 
 cfiles=$(find ./src -type f -name "*.c")

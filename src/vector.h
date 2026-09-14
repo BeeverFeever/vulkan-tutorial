@@ -1,9 +1,7 @@
-#pragma once
+#ifndef VECTOR_H
+#define VECTOR_H
 
 #include <stddef.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
 
 #include "memory.h"
 
@@ -38,6 +36,21 @@ typedef struct {
 #define vector_length(a) (vector_header(a)->length)
 #define vector_capacity(a) (vector_header(a)->capacity)
 
+#define vector_push_back(vec, value) ( \
+      (vec) = vector_ensure_capacity(vec, 1, sizeof(value)), \
+      (vec)[vector_header(vec)->length] = (value), \
+      &(vec)[vector_header(vec)->length++])
+
+void *vector_ensure_capacity(void *a, Size item_count, Size item_size);
+bool vector_is_empty(void* vector);
+void vector_update_length(Size new_length, void* vector);
+void *vector_init(Size item_size, Size capacity, Allocator* a);
+void vector_debug(char* name, void* vec);
+
+#endif // VECTOR_H
+
+#ifdef VECTOR_IMPLEMENTATION
+
 void *vector_ensure_capacity(void *a, Size item_count, Size item_size) {
    VectorHeader *h = vector_header(a);
    Size desired_capacity = h->length + item_count;
@@ -60,11 +73,6 @@ void *vector_ensure_capacity(void *a, Size item_count, Size item_size) {
    h++;
    return h;
 }
-
-#define vector_push_back(vec, value) ( \
-      (vec) = vector_ensure_capacity(vec, 1, sizeof(value)), \
-      (vec)[vector_header(vec)->length] = (value), \
-      &(vec)[vector_header(vec)->length++])
 
 bool vector_is_empty(void* vector) {
    return vector_header(vector)->length == 0;
@@ -102,3 +110,5 @@ void vector_debug(char* name, void* vec) {
    printf("  capacity: %ld\n", header->capacity);
    printf("  length: %ld\n", header->length);
 }
+
+#endif // VECTOR_IMPLEMENTATION

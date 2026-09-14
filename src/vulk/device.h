@@ -2,7 +2,7 @@
 
 #include <vulkan/vulkan.h>
 
-#include "queues.h"
+#include <vulk/queues.h>
 
 typedef struct {
    VkDevice logical;

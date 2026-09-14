@@ -34,7 +34,7 @@ bool str_eq_cstr(String *str, char* cstr);
 bool str_eq(String* str1, String* str2);
 
 double str_strtod(String* str);
-int str_strtoi(String str);
+long str_strtol(String str);
 
 int str_count_char(String str, char c);
 

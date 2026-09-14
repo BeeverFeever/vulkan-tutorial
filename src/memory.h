@@ -1,8 +1,8 @@
 #pragma once
 
-#define KB(s) ((s) * 1024)
-#define MB(s) (KB(s) * 1024)
-#define GB(s) (MB(s) * 1024)
+#define KB(s) (long long)((s) * 1024)
+#define MB(s) (long long)(KB(s) * 1024)
+#define GB(s) (long long)(MB(s) * 1024)
 
 typedef struct {
    u8* buf;

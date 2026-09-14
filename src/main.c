@@ -12,6 +12,7 @@
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
 
+#define VECTOR_IMPLEMENTATION
 #include "vector.h"
 #include "memory.h"
 #include "file.h"
@@ -20,6 +21,8 @@
 #include <vulk/config.h>
 #include <vulk/device.h>
 #include <vulk/window.h>
+#include <vulk/debugutils.h>
+#include <vulk/renderer.h>
 
 typedef struct {
    vec2 pos;
@@ -94,15 +97,6 @@ constexpr u16 indices[] = {
 
 Allocator global_allocator = {0};
 
-static VKAPI_ATTR VkBool32 VKAPI_CALL debug_callback(
-   VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
-   VkDebugUtilsMessageTypeFlagsEXT messageType,
-   const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData,
-   void* pUserData) {
-   fprintf(stderr, "validation layer: %s\n", pCallbackData->pMessage);
-   return VK_FALSE;
-}
-
 void framebuffer_resize_callback(GLFWwindow* window, int width, int height) {
    App* app = (App*)glfwGetWindowUserPointer(window); 
    app->framebufferResized = true;
@@ -124,120 +118,6 @@ u32 clamp_u32(u32 value, u32 min, u32 max) {
    }
 }
 
-void populate_debug_messenger_createInfo(VkDebugUtilsMessengerCreateInfoEXT* createInfo) {
-   createInfo->sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT;
-   createInfo->messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT;
-   createInfo->messageType = VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
-   createInfo->pfnUserCallback = debug_callback;
-   createInfo->pUserData = nullptr;
-}
-
-void get_required_extensions(vectorT(const char*) extensions) {
-   u32 glfwExtensionCount = 0;
-   const char** glfwExtensions;
-   glfwExtensions = glfwGetRequiredInstanceExtensions(&glfwExtensionCount);
-
-   for (Size i = 0; i < glfwExtensionCount; i++) {
-      vector_push_back(extensions, glfwExtensions[i]);
-   }
-
-   if (enableValidationLayers) {
-      vector_push_back(extensions, VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
-   }
-}
-
-bool check_validation_layers_support(void) {
-   u32 layerCount = 0;
-   vkEnumerateInstanceLayerProperties(&layerCount, nullptr);
-
-   VkLayerProperties availableLayers[layerCount];
-   vkEnumerateInstanceLayerProperties(&layerCount, availableLayers);
-   
-   for (int i = 0; i < lengthof(validationLayers); i++) {
-      bool layerFound = false;
-      const char* layerName = validationLayers[i];
-
-      for (int j = 0; j < lengthof(availableLayers); j++) {
-         VkLayerProperties layerProperties = availableLayers[j];
-         if (strcmp(layerName, layerProperties.layerName) == 0) {
-            layerFound = true;
-            break;
-         }
-      }
-
-      if (!layerFound) {
-         return false;
-      }
-   }
-
-   return true;
-}
-
-void create_instance(VkInstance* instance) {
-   if (enableValidationLayers && !check_validation_layers_support()) {
-      fprintf(stderr, "Validation layers requested but not available.\n");
-      exit(EXIT_FAILURE);
-   }
-
-   VkApplicationInfo appInfo = {0};
-   appInfo.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
-   appInfo.pApplicationName = "Hello Triangle";
-   appInfo.applicationVersion = VK_MAKE_VERSION(1, 0, 0);
-   appInfo.pEngineName = "No Engine";
-   appInfo.engineVersion = VK_MAKE_VERSION(1, 0, 0);
-   appInfo.apiVersion = VK_API_VERSION_1_0;
-
-   VkInstanceCreateInfo createInfo = {0};
-   createInfo.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
-   createInfo.pApplicationInfo = &appInfo;
-
-   vectorT(const char*) extensions = vector(const char*, &global_allocator);
-   get_required_extensions(extensions);
-   createInfo.enabledExtensionCount = (u32)vector_length(extensions);
-   createInfo.ppEnabledExtensionNames = extensions;
-
-   VkDebugUtilsMessengerCreateInfoEXT debugCreateInfo;
-   if (enableValidationLayers) {
-      createInfo.enabledLayerCount = (u32)lengthof(validationLayers);
-      createInfo.ppEnabledLayerNames = validationLayers;
-
-      populate_debug_messenger_createInfo(&debugCreateInfo);
-      createInfo.pNext = (VkDebugUtilsMessengerCreateInfoEXT*)&debugCreateInfo;
-   } else {
-      createInfo.enabledLayerCount = 0;
-      createInfo.pNext = nullptr;
-   }
-
-   if (vkCreateInstance(&createInfo, nullptr, instance) != VK_SUCCESS) {
-      fprintf(stderr, "Error initialising vulkan instance.\n");
-      exit(EXIT_FAILURE);
-   }
-}
-
-VkResult create_debug_utils_messenger_ext(VkInstance* instance, const VkDebugUtilsMessengerCreateInfoEXT* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkDebugUtilsMessengerEXT* pDebugMessenger) {
-    auto func = (PFN_vkCreateDebugUtilsMessengerEXT)vkGetInstanceProcAddr(*instance, "vkCreateDebugUtilsMessengerEXT");
-    if (func != nullptr) {
-        return func(*instance, pCreateInfo, pAllocator, pDebugMessenger);
-    } else {
-        return VK_ERROR_EXTENSION_NOT_PRESENT;
-    }
-}
-
-static void destroy_debug_utils_messenger_ext(VkInstance instance, VkDebugUtilsMessengerEXT debugMessenger, const VkAllocationCallbacks* pAllocator) {
-    auto func = (PFN_vkDestroyDebugUtilsMessengerEXT) vkGetInstanceProcAddr(instance, "vkDestroyDebugUtilsMessengerEXT");
-    if (func != nullptr)
-        func(instance, debugMessenger, pAllocator);
-}
-
-void setup_debug_messenger(App* app) {
-   if (!enableValidationLayers) return;
-   VkDebugUtilsMessengerCreateInfoEXT createInfo = {0};
-   populate_debug_messenger_createInfo(&createInfo);
-
-   if (create_debug_utils_messenger_ext(&app->instance, &createInfo, nullptr, &app->debugMessenger) != VK_SUCCESS) {
-       fprintf(stderr, "failed to setup debug messenger!\n");
-   }
-}
 
 VkSurfaceFormatKHR choose_swap_surface_format(App* app) {
    u32 formatCount;
@@ -1044,8 +924,8 @@ void create_descriptor_sets(App* app) {
 }
 
 void init_vulkan(App* app) {
-   create_instance(&app->instance);
-   setup_debug_messenger(app); 
+   app->instance = instance_create(&global_allocator);
+   debug_utils_messenger_ext_setup(&app->instance, &app->debugMessenger); 
    create_surface(app);
 
    app->devices.physical = device_physical_pick(app->instance, app->surface);
@@ -1111,7 +991,7 @@ void cleanup(App* app) {
    device_logical_destroy(app->devices.logical);
 
    if (enableValidationLayers) {
-      destroy_debug_utils_messenger_ext(app->instance, app->debugMessenger, nullptr);
+      debug_utils_messenger_ext_destroy(app->instance, app->debugMessenger, nullptr);
    }
 
    vkDestroySurfaceKHR(app->instance, app->surface, nullptr);
