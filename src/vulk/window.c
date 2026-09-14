@@ -27,3 +27,32 @@ void window_create_surface(Window* window, VkInstance instance) {
       exit(EXIT_FAILURE);
    }
 }
+
+static u32 clamp_u32(u32 value, u32 min, u32 max) {
+   if (value >= max) {
+      return max;
+   } else if (value <= min) {
+      return min;
+   } else {
+      return value;
+   }
+}
+
+VkExtent2D window_get_framebuffer_extent(Window *window, VkSurfaceCapabilitiesKHR capabilities) {
+   if (capabilities.currentExtent.width != UINT32_MAX) {
+      return capabilities.currentExtent;
+   } else {
+      i32 width, height;
+      glfwGetFramebufferSize(window->handle, &width, &height);
+
+      VkExtent2D actualExtent = {
+         .width = (u32)width,
+         .height = (u32)height
+      };
+
+      actualExtent.width = clamp_u32(actualExtent.width, capabilities.minImageExtent.width, capabilities.maxImageExtent.width);
+      actualExtent.height = clamp_u32(actualExtent.height, capabilities.minImageExtent.height, capabilities.maxImageExtent.height);
+
+      return actualExtent;
+   }
+}

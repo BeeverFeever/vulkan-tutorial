@@ -111,4 +111,5 @@ void vector_debug(char* name, void* vec) {
    printf("  length: %ld\n", header->length);
 }
 
+#undef VECTOR_IMPLEMENTATION
 #endif // VECTOR_IMPLEMENTATION

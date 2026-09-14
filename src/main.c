@@ -1,3 +1,4 @@
+#include "vulkan/vulkan_core.h"
 #include <assert.h>
 #include <cglm/cam.h>
 #include <stdint.h>
@@ -23,6 +24,7 @@
 #include <vulk/window.h>
 #include <vulk/debugutils.h>
 #include <vulk/renderer.h>
+#include <vulk/swapchain.h>
 
 typedef struct {
    vec2 pos;
@@ -47,13 +49,7 @@ typedef struct {
    Device devices;
    Queues queues;
    
-   VkSwapchainKHR swapChain;
-
-   vectorT(VkImage) swapChainImages;
-   vectorT(VkImageView) swapChainImageViews;
-   VkFramebuffer* swapChainFramebuffers;
-   VkFormat swapChainImageFormat;
-   VkExtent2D swapChainExtent;
+   Swapchain swapchain;
 
    VkRenderPass renderPass;
    VkDescriptorSetLayout descriptorSetLayout;
@@ -117,140 +113,6 @@ u32 clamp_u32(u32 value, u32 min, u32 max) {
    }
 }
 
-
-VkSurfaceFormatKHR choose_swap_surface_format(App* app) {
-   u32 formatCount;
-   vkGetPhysicalDeviceSurfaceFormatsKHR(app->devices.physical, app->window.surface, &formatCount, nullptr);
-   assert(formatCount > 0);
-
-   VkSurfaceFormatKHR surfaceFormats[formatCount] = {};
-   vkGetPhysicalDeviceSurfaceFormatsKHR(app->devices.physical, app->window.surface, &formatCount, surfaceFormats);
-
-   for (Size i = 0; i < formatCount; i++) {
-      VkSurfaceFormatKHR currentFormat = surfaceFormats[i];
-      if (currentFormat.format == VK_FORMAT_B8G8R8A8_SRGB && currentFormat.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR) {
-         return currentFormat;
-      }
-   }
-
-   return surfaceFormats[0];
-}
-
-VkPresentModeKHR choose_swap_present_mode(App* app) {
-   u32 presentModeCount;
-   vkGetPhysicalDeviceSurfacePresentModesKHR(app->devices.physical, app->window.surface, &presentModeCount, nullptr);
-   assert(presentModeCount > 0);
-
-   VkPresentModeKHR presentModes[presentModeCount] = {};
-   vkGetPhysicalDeviceSurfacePresentModesKHR(app->devices.physical, app->window.surface, &presentModeCount, presentModes);
-
-   for (Size i = 0; i < presentModeCount; i++) {
-      if (presentModes[i] == VK_PRESENT_MODE_MAILBOX_KHR) {
-         return presentModes[i];
-      }
-   }
-   return VK_PRESENT_MODE_FIFO_KHR;
-}
-
-VkExtent2D choose_swap_extent(App* app, VkSurfaceCapabilitiesKHR capabilities) {
-   if (capabilities.currentExtent.width != UINT32_MAX) {
-      return capabilities.currentExtent;
-   } else {
-      i32 width, height;
-      glfwGetFramebufferSize(app->window.handle, &width, &height);
-
-      VkExtent2D actualExtent = {
-         (u32)width,
-         (u32)height
-      };
-      
-      actualExtent.width = clamp_u32(actualExtent.width, capabilities.minImageExtent.width, capabilities.maxImageExtent.width);
-      actualExtent.height = clamp_u32(actualExtent.height, capabilities.minImageExtent.height, capabilities.maxImageExtent.height);
-
-      return actualExtent;
-   }
-}
-
-void create_swap_chain(App* app) {
-   VkSurfaceCapabilitiesKHR capabilities;
-   vkGetPhysicalDeviceSurfaceCapabilitiesKHR(app->devices.physical, app->window.surface, &capabilities);
-
-   VkSurfaceFormatKHR surfaceFormat = choose_swap_surface_format(app);
-   VkPresentModeKHR presentMode = choose_swap_present_mode(app);
-   VkExtent2D extent = choose_swap_extent(app, capabilities);
-
-   u32 imageCount = capabilities.minImageCount + 1;
-   if (capabilities.maxImageCount > 0 && imageCount > capabilities.maxImageCount) {
-      imageCount = capabilities.maxImageCount;
-   } 
-
-   VkSwapchainCreateInfoKHR createInfo = {0};
-   createInfo.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
-   createInfo.surface = app->window.surface;
-   createInfo.minImageCount = imageCount;
-   createInfo.imageFormat = surfaceFormat.format;
-   createInfo.imageColorSpace = surfaceFormat.colorSpace;
-   createInfo.imageExtent = extent;
-   createInfo.imageArrayLayers = 1;
-   createInfo.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
-
-   QueueFamilyIndices indices = find_queue_families(app->devices.physical, app->window.surface);
-   uint32_t queueFamilyIndices[] = {indices.graphicsFamily, indices.presentationFamily};
-
-   if (indices.graphicsFamily != indices.presentationFamily) {
-      createInfo.imageSharingMode = VK_SHARING_MODE_CONCURRENT;
-      createInfo.queueFamilyIndexCount = 2;
-      createInfo.pQueueFamilyIndices = queueFamilyIndices;
-   } else {
-      createInfo.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
-   }
-
-   createInfo.preTransform = capabilities.currentTransform;
-   createInfo.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
-   createInfo.presentMode = presentMode;
-   createInfo.clipped = VK_TRUE;
-   createInfo.oldSwapchain = VK_NULL_HANDLE;
-
-   if (vkCreateSwapchainKHR(app->devices.logical, &createInfo, nullptr, &app->swapChain)) {
-      fprintf(stderr, "failed to create swapchain\n");
-      exit(EXIT_FAILURE);
-   }
-
-   vkGetSwapchainImagesKHR(app->devices.logical, app->swapChain, &imageCount, nullptr);
-   app->swapChainImages = vector(VkImage, imageCount, &global_allocator);
-   vkGetSwapchainImagesKHR(app->devices.logical, app->swapChain, &imageCount, app->swapChainImages);
-   vector_update_length(imageCount, app->swapChainImages);
-
-   app->swapChainImageFormat = surfaceFormat.format;
-   app->swapChainExtent = extent;
-}
-
-void create_image_views(App* app) {
-   app->swapChainImageViews = vector(VkImage, vector_length(app->swapChainImages), &global_allocator);
-
-   for (Size i = 0; i < vector_length(app->swapChainImages); i++) {
-      VkImageViewCreateInfo createInfo = {};
-      createInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-      createInfo.image = app->swapChainImages[i];
-      createInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
-      createInfo.format = app->swapChainImageFormat;
-      createInfo.components.r = VK_COMPONENT_SWIZZLE_IDENTITY;
-      createInfo.components.g = VK_COMPONENT_SWIZZLE_IDENTITY;
-      createInfo.components.b = VK_COMPONENT_SWIZZLE_IDENTITY;
-      createInfo.components.a = VK_COMPONENT_SWIZZLE_IDENTITY;
-      createInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-      createInfo.subresourceRange.baseMipLevel = 0;
-      createInfo.subresourceRange.levelCount = 1;
-      createInfo.subresourceRange.baseArrayLayer = 0;
-      createInfo.subresourceRange.layerCount = 1;
-
-      if (vkCreateImageView(app->devices.logical, &createInfo, nullptr, &app->swapChainImageViews[i]) != VK_SUCCESS) {
-         fprintf(stderr, "failed to create image views\n");
-         exit(EXIT_FAILURE);
-      }
-   }
-   vector_update_length(vector_length(app->swapChainImages), app->swapChainImageViews);
-}
 
 VkShaderModule create_shader_module(App* app, u32* code, Size codeLength) {
    VkShaderModuleCreateInfo createInfo = {0};
@@ -419,7 +281,7 @@ void create_graphics_pipeline(App* app) {
 
 void create_render_pass(App* app) {
    VkAttachmentDescription colourAttachment = {0};
-   colourAttachment.format = app->swapChainImageFormat;
+   colourAttachment.format = app->swapchain.imageFormat;
    colourAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
    colourAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
    colourAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
@@ -458,31 +320,6 @@ void create_render_pass(App* app) {
       fprintf(stderr, "failed to create render pass.\n");
       exit(EXIT_FAILURE);
    }
-}
-
-void create_framebuffers(App* app) {
-   app->swapChainFramebuffers = vector(VkFramebuffer, vector_length(app->swapChainImageViews), &global_allocator);
-
-   for (Size i = 0; i < vector_length(app->swapChainImageViews); i++) {
-      VkImageView attachments[] = {
-         app->swapChainImageViews[i],
-      };
-
-      VkFramebufferCreateInfo framebufferCreateInfo = {0};
-      framebufferCreateInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
-      framebufferCreateInfo.renderPass = app->renderPass;
-      framebufferCreateInfo.attachmentCount = 1;
-      framebufferCreateInfo.pAttachments = attachments;
-      framebufferCreateInfo.width = app->swapChainExtent.width;
-      framebufferCreateInfo.height = app->swapChainExtent.height;
-      framebufferCreateInfo.layers = 1;
-
-      if (vkCreateFramebuffer(app->devices.logical, &framebufferCreateInfo, nullptr, &app->swapChainFramebuffers[i]) != VK_SUCCESS) {
-         fprintf(stderr, "failed to create framebuffer.\n");
-         exit(EXIT_FAILURE);
-      }
-   }
-   vector_update_length(vector_length(app->swapChainImageViews), app->swapChainFramebuffers);
 }
 
 void create_command_pool(App* app) {
@@ -527,9 +364,9 @@ void record_command_buffer(App* app, VkCommandBuffer commandBuffer, u32 imageInd
    VkRenderPassBeginInfo renderPassInfo = {0};
    renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
    renderPassInfo.renderPass = app->renderPass;
-   renderPassInfo.framebuffer = app->swapChainFramebuffers[imageIndex];
+   renderPassInfo.framebuffer = app->swapchain.framebuffers[imageIndex];
    renderPassInfo.renderArea.offset = (VkOffset2D){0, 0};
-   renderPassInfo.renderArea.extent = app->swapChainExtent;
+   renderPassInfo.renderArea.extent = app->swapchain.extent;
 
    VkClearValue clearColor = {{{0.0f, 0.0f, 0.0f, 1.0f}}};
    renderPassInfo.clearValueCount = 1;
@@ -541,15 +378,15 @@ void record_command_buffer(App* app, VkCommandBuffer commandBuffer, u32 imageInd
    VkViewport viewport = {0};
    viewport.x = 0.0f;
    viewport.y = 0.0f;
-   viewport.width = (float)app->swapChainExtent.width;
-   viewport.height = (float)app->swapChainExtent.height;
+   viewport.width = (float)app->swapchain.extent.width;
+   viewport.height = (float)app->swapchain.extent.height;
    viewport.minDepth = 0.0f;
    viewport.maxDepth = 1.0f;
    vkCmdSetViewport(commandBuffer, 0, 1, &viewport);
 
    VkRect2D scissor = {0};
    scissor.offset = (VkOffset2D){0, 0};
-   scissor.extent = app->swapChainExtent;
+   scissor.extent = app->swapchain.extent;
    vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
 
    VkBuffer vertexBuffers[] = {app->vertexBuffer};
@@ -570,11 +407,11 @@ void record_command_buffer(App* app, VkCommandBuffer commandBuffer, u32 imageInd
 }
 
 void create_sync_objects(App* app) {
-   app->renderFinishedSemaphores = vector(VkSemaphore, vector_length(app->swapChainImages), &global_allocator);
+   app->renderFinishedSemaphores = vector(VkSemaphore, vector_length(app->swapchain.images), &global_allocator);
    app->imageAvailableSemaphores = vector(VkSemaphore, g_maxFramesInFlight, &global_allocator);
    app->inFlightFences = vector(VkFence, g_maxFramesInFlight, &global_allocator);
 
-   vector_update_length(vector_length(app->swapChainImages), app->renderFinishedSemaphores);
+   vector_update_length(vector_length(app->swapchain.images), app->renderFinishedSemaphores);
    vector_update_length(g_maxFramesInFlight, app->imageAvailableSemaphores);
    vector_update_length(g_maxFramesInFlight, app->inFlightFences);
 
@@ -585,7 +422,7 @@ void create_sync_objects(App* app) {
    fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
    fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;
 
-   for (Size i = 0; i < vector_length(app->swapChainImages); i++) {
+   for (Size i = 0; i < vector_length(app->swapchain.images); i++) {
       if (vkCreateSemaphore(app->devices.logical, &semaphoreInfo, nullptr, &app->renderFinishedSemaphores[i]) != VK_SUCCESS) {
          fprintf(stderr, "failed to create semaphores.\n");
          exit(EXIT_FAILURE);
@@ -601,42 +438,13 @@ void create_sync_objects(App* app) {
    }
 }
 
-void cleanup_swap_chain(App* app) {
-   for (Size i = 0; i < vector_length(app->swapChainFramebuffers); i++) {
-      vkDestroyFramebuffer(app->devices.logical, app->swapChainFramebuffers[i], nullptr);
-   }
-
-   for (Size i = 0; i < vector_length(app->swapChainImageViews); i++) {
-      vkDestroyImageView(app->devices.logical, app->swapChainImageViews[i], nullptr);
-   }
-
-   vkDestroySwapchainKHR(app->devices.logical, app->swapChain, nullptr);
-}
-
-void recreate_swap_chain(App* app) {
-   int width = 0;
-   int height = 0;
-   glfwGetFramebufferSize(app->window.handle, &width, &height);
-   while (width == 0 || height == 0) {
-      glfwGetFramebufferSize(app->window.handle, &width, &height);
-      glfwWaitEvents();
-   }
-
-   vkDeviceWaitIdle(app->devices.logical);
-   cleanup_swap_chain(app);
-
-   create_swap_chain(app);
-   create_image_views(app);
-   create_framebuffers(app);
-}
-
 void update_uniform_buffer(App* app) {
-   time_t now = time(nullptr) - app->startTime;
+   double now = glfwGetTime();
    
    UniformBufferObject ubo = {0};
-   glm_rotate_make(ubo.model, glm_rad(1.0f) * (float)now, (vec3){0.0f, 0.0f, 1.0f});
+   glm_rotate_make(ubo.model, glm_rad((float)now * 100.0f), (vec3){0.0f, 0.0f, 1.0f});
    glm_lookat((vec3){2.0f, 2.0f, 2.0f}, (vec3){0.0f, 0.0f, 0.0f}, (vec3){0.0f, 0.0f, 1.0f}, ubo.view);
-   glm_perspective(glm_rad(45.0f), (float)app->swapChainExtent.width / (float)app->swapChainExtent.height, 0.1f, 10.0f, ubo.proj);
+   glm_perspective(glm_rad(45.0f), (float)app->swapchain.extent.width / (float)app->swapchain.extent.height, 0.1f, 10.0f, ubo.proj);
 
    // flip upside down
    ubo.proj[1][1] *= -1;
@@ -648,11 +456,8 @@ void draw_frame(App* app) {
    vkWaitForFences(app->devices.logical, 1, &app->inFlightFences[app->currentFrame], VK_TRUE, UINT64_MAX);
 
    u32 imageIndex = 0;
-   VkResult result = vkAcquireNextImageKHR(app->devices.logical, app->swapChain, UINT64_MAX, app->imageAvailableSemaphores[app->currentFrame], VK_NULL_HANDLE, &imageIndex);
-   if (result == VK_ERROR_OUT_OF_DATE_KHR) {
-      recreate_swap_chain(app);
-      return;
-   } else if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR) {
+   VkResult result = vkAcquireNextImageKHR(app->devices.logical, app->swapchain.handle, UINT64_MAX, app->imageAvailableSemaphores[app->currentFrame], VK_NULL_HANDLE, &imageIndex);
+   if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR) {
       fprintf(stderr, "failed to acquire swapchain image.\n");
       return;
    }
@@ -691,7 +496,7 @@ void draw_frame(App* app) {
    presentInfo.waitSemaphoreCount = 1;
    presentInfo.pWaitSemaphores = signalSemaphores;
 
-   VkSwapchainKHR swapChains[] = {app->swapChain};
+   VkSwapchainKHR swapChains[] = {app->swapchain.handle};
    presentInfo.swapchainCount = 1;
    presentInfo.pSwapchains = swapChains;
    presentInfo.pImageIndices = &imageIndex;
@@ -700,7 +505,13 @@ void draw_frame(App* app) {
    result = vkQueuePresentKHR(app->queues.present, &presentInfo);
    if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR || app->framebufferResized) {
       app->framebufferResized = false;
-      recreate_swap_chain(app);
+      VkSurfaceCapabilitiesKHR capabilities;
+      vkGetPhysicalDeviceSurfaceCapabilitiesKHR(app->devices.physical, app->window.surface, &capabilities);
+      VkExtent2D newExtent = window_get_framebuffer_extent(&app->window, capabilities);
+      while (newExtent.width == 0 || newExtent.height == 0) {
+         newExtent = window_get_framebuffer_extent(&app->window, capabilities);
+      }
+      swapchain_recreate(&app->swapchain, &app->window, app->devices, app->renderPass, newExtent, &global_allocator);
    } else if (result != VK_SUCCESS) {
       fprintf(stderr, "failed to present swap chain image!");
       exit(EXIT_FAILURE);
@@ -922,12 +733,12 @@ void init_vulkan(App* app) {
    app->devices.physical = device_physical_pick(app->instance, app->window.surface);
    app->devices.logical = device_logical_create(&app->queues, app->window.surface, app->devices.physical);
 
-   create_swap_chain(app);
-   create_image_views(app);
+   app->swapchain = swapchain_create(&app->window, app->devices, &global_allocator);
+   swapchain_create_image_views(&app->swapchain, app->devices, &global_allocator);
    create_render_pass(app);
    create_descriptor_set_layout(app);
    create_graphics_pipeline(app);
-   create_framebuffers(app);
+   swapchain_create_framebuffers(&app->swapchain, app->devices, app->renderPass, &global_allocator);
    create_command_pool(app);
    create_vertex_buffer(app);
    create_index_buffer(app);
@@ -949,7 +760,7 @@ App init_app(void) {
 }
 
 void cleanup(App* app) {
-   cleanup_swap_chain(app);
+   swapchain_cleanup(&app->swapchain, app->devices);
 
    for (Size i = 0; i < g_maxFramesInFlight; i++) {
       vkDestroyBuffer(app->devices.logical, app->uniformBuffers[i], nullptr);

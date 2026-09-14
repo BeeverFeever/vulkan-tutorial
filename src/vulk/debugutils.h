@@ -1,6 +1,5 @@
 #pragma once
 
-#include "vulkan/vulkan_core.h"
 #include <vulkan/vulkan.h>
 
 VkResult debug_utils_messenger_ext_create(VkInstance* instance, const VkDebugUtilsMessengerCreateInfoEXT* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkDebugUtilsMessengerEXT* pDebugMessenger);
