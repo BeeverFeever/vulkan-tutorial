@@ -47,7 +47,6 @@ typedef struct {
    Device devices;
    Queues queues;
    
-   VkSurfaceKHR surface;
    VkSwapchainKHR swapChain;
 
    vectorT(VkImage) swapChainImages;
@@ -121,11 +120,11 @@ u32 clamp_u32(u32 value, u32 min, u32 max) {
 
 VkSurfaceFormatKHR choose_swap_surface_format(App* app) {
    u32 formatCount;
-   vkGetPhysicalDeviceSurfaceFormatsKHR(app->devices.physical, app->surface, &formatCount, nullptr);
+   vkGetPhysicalDeviceSurfaceFormatsKHR(app->devices.physical, app->window.surface, &formatCount, nullptr);
    assert(formatCount > 0);
 
    VkSurfaceFormatKHR surfaceFormats[formatCount] = {};
-   vkGetPhysicalDeviceSurfaceFormatsKHR(app->devices.physical, app->surface, &formatCount, surfaceFormats);
+   vkGetPhysicalDeviceSurfaceFormatsKHR(app->devices.physical, app->window.surface, &formatCount, surfaceFormats);
 
    for (Size i = 0; i < formatCount; i++) {
       VkSurfaceFormatKHR currentFormat = surfaceFormats[i];
@@ -139,11 +138,11 @@ VkSurfaceFormatKHR choose_swap_surface_format(App* app) {
 
 VkPresentModeKHR choose_swap_present_mode(App* app) {
    u32 presentModeCount;
-   vkGetPhysicalDeviceSurfacePresentModesKHR(app->devices.physical, app->surface, &presentModeCount, nullptr);
+   vkGetPhysicalDeviceSurfacePresentModesKHR(app->devices.physical, app->window.surface, &presentModeCount, nullptr);
    assert(presentModeCount > 0);
 
    VkPresentModeKHR presentModes[presentModeCount] = {};
-   vkGetPhysicalDeviceSurfacePresentModesKHR(app->devices.physical, app->surface, &presentModeCount, presentModes);
+   vkGetPhysicalDeviceSurfacePresentModesKHR(app->devices.physical, app->window.surface, &presentModeCount, presentModes);
 
    for (Size i = 0; i < presentModeCount; i++) {
       if (presentModes[i] == VK_PRESENT_MODE_MAILBOX_KHR) {
@@ -174,7 +173,7 @@ VkExtent2D choose_swap_extent(App* app, VkSurfaceCapabilitiesKHR capabilities) {
 
 void create_swap_chain(App* app) {
    VkSurfaceCapabilitiesKHR capabilities;
-   vkGetPhysicalDeviceSurfaceCapabilitiesKHR(app->devices.physical, app->surface, &capabilities);
+   vkGetPhysicalDeviceSurfaceCapabilitiesKHR(app->devices.physical, app->window.surface, &capabilities);
 
    VkSurfaceFormatKHR surfaceFormat = choose_swap_surface_format(app);
    VkPresentModeKHR presentMode = choose_swap_present_mode(app);
@@ -187,7 +186,7 @@ void create_swap_chain(App* app) {
 
    VkSwapchainCreateInfoKHR createInfo = {0};
    createInfo.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
-   createInfo.surface = app->surface;
+   createInfo.surface = app->window.surface;
    createInfo.minImageCount = imageCount;
    createInfo.imageFormat = surfaceFormat.format;
    createInfo.imageColorSpace = surfaceFormat.colorSpace;
@@ -195,7 +194,7 @@ void create_swap_chain(App* app) {
    createInfo.imageArrayLayers = 1;
    createInfo.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
 
-   QueueFamilyIndices indices = find_queue_families(app->devices.physical, app->surface);
+   QueueFamilyIndices indices = find_queue_families(app->devices.physical, app->window.surface);
    uint32_t queueFamilyIndices[] = {indices.graphicsFamily, indices.presentationFamily};
 
    if (indices.graphicsFamily != indices.presentationFamily) {
@@ -224,14 +223,6 @@ void create_swap_chain(App* app) {
 
    app->swapChainImageFormat = surfaceFormat.format;
    app->swapChainExtent = extent;
-}
-
-
-void create_surface(App* app) {
-   if (glfwCreateWindowSurface(app->instance, app->window.handle, nullptr, &app->surface) != VK_SUCCESS) {
-      fprintf(stderr, "failed to create surface\n");
-      exit(EXIT_FAILURE);
-   }
 }
 
 void create_image_views(App* app) {
@@ -495,7 +486,7 @@ void create_framebuffers(App* app) {
 }
 
 void create_command_pool(App* app) {
-   QueueFamilyIndices queueFamilyIndices = find_queue_families(app->devices.physical, app->surface);
+   QueueFamilyIndices queueFamilyIndices = find_queue_families(app->devices.physical, app->window.surface);
 
    VkCommandPoolCreateInfo poolInfo = {0};
    poolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
@@ -926,10 +917,10 @@ void create_descriptor_sets(App* app) {
 void init_vulkan(App* app) {
    app->instance = instance_create(&global_allocator);
    debug_utils_messenger_ext_setup(&app->instance, &app->debugMessenger); 
-   create_surface(app);
+   window_create_surface(&app->window, app->instance);
 
-   app->devices.physical = device_physical_pick(app->instance, app->surface);
-   app->devices.logical = device_logical_create(&app->queues, app->surface, app->devices.physical);
+   app->devices.physical = device_physical_pick(app->instance, app->window.surface);
+   app->devices.logical = device_logical_create(&app->queues, app->window.surface, app->devices.physical);
 
    create_swap_chain(app);
    create_image_views(app);
@@ -994,7 +985,7 @@ void cleanup(App* app) {
       debug_utils_messenger_ext_destroy(app->instance, app->debugMessenger, nullptr);
    }
 
-   vkDestroySurfaceKHR(app->instance, app->surface, nullptr);
+   vkDestroySurfaceKHR(app->instance, app->window.surface, nullptr);
    vkDestroyInstance(app->instance, nullptr);
    glfwDestroyWindow(app->window.handle);
    glfwTerminate();
