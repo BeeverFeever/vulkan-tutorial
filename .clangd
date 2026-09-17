@@ -1,0 +1,7 @@
+CompileFlags:
+  Add: [-std=c23, -Wall, -Wwarn, -Wconversion, -pedantic, -fsanitize=undefined]
+  Compiler: gcc
+Style:
+  AngledHeaders: ["src/.*", "extern/.*"]
+Documentation:
+  CommentFormat: Markdown

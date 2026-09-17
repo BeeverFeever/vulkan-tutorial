@@ -1,4 +1,21 @@
 #!/usr/bin/env bash
 
-./vulkan-1.4.321.1/x86_64/bin/glslc ./resources/shaders/basic.frag -o ./resources/shaders/frag.spv
-./vulkan-1.4.321.1/x86_64/bin/glslc ./resources/shaders/basic.vert -o ./resources/shaders/vert.spv
+set -eou pipefail
+
+srcdir=./resources/shaders/src
+outdir=./resources/shaders/spv
+glslc_bin=./vulkan-1.4.321.1/x86_64/bin/glslc
+
+shaders=$(find ./resources/shaders/src -type f)
+
+mkdir -p "$outdir"
+
+for shader in $shaders; do
+   echo "compiling: $shader"
+   relpath=${shader#"$srcdir"/}
+   outfile="$outdir/${relpath%.glsl}.spv"
+   mkdir -p "$(dirname "$outfile")"
+   "$glslc_bin" "$shader" -o "$outfile"
+done
+
+echo "Compiled $(echo "$shaders" | wc -l) shaders to $outdir"
