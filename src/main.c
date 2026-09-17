@@ -7,6 +7,7 @@
 #include <time.h>
 
 #include <vulk/commands.h>
+#include <vulk/descriptors.h>
 #include <vulkan/vulkan.h>
 #include <cglm/cglm.h>
 
@@ -128,6 +129,14 @@ vectorT(VkVertexInputAttributeDescription) get_vertex_attribute_descriptions(All
    vector_push_back(attributeDescriptions, attrs2);
 
    return attributeDescriptions;
+}
+
+VkDescriptorBufferInfo ubo_get_descriptor_info(VkBuffer buffer) {
+   VkDescriptorBufferInfo bufferInfo = {};
+   bufferInfo.buffer = buffer;
+   bufferInfo.offset = 0;
+   bufferInfo.range = sizeof(UniformBufferObject);
+   return bufferInfo;
 }
 
 void record_command_buffer(App* app, VkCommandBuffer commandBuffer, u32 imageIndex) {
@@ -431,60 +440,6 @@ void create_uniform_buffer(App* app) {
     }
 }
 
-void create_descriptor_pool(App* app) {
-   VkDescriptorPoolSize poolSize = {};
-   poolSize.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-   poolSize.descriptorCount = (u32)g_maxFramesInFlight;
-
-   VkDescriptorPoolCreateInfo poolInfo = {};
-   poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-   poolInfo.poolSizeCount = 1;
-   poolInfo.pPoolSizes = &poolSize;
-   poolInfo.maxSets = (u32)g_maxFramesInFlight;
-
-   if (vkCreateDescriptorPool(app->devices.logical, &poolInfo, nullptr, &app->descriptorPool) != VK_SUCCESS) {
-      fprintf(stderr, "failed to create descriptor pool\n");
-      exit(EXIT_FAILURE);
-   }
-}
-
-void create_descriptor_sets(App* app) {
-   vectorT(VkDescriptorSetLayout) layouts = vector(VkDescriptorSetLayout, g_maxFramesInFlight, &global_allocator);
-   for (Size i = 0; i < g_maxFramesInFlight; i++) {
-      vector_push_back(layouts, app->pipeline.descriptorSetLayout);
-   }
-   VkDescriptorSetAllocateInfo allocInfo = {};
-   allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-   allocInfo.descriptorPool = app->descriptorPool;
-   allocInfo.descriptorSetCount = (u32)g_maxFramesInFlight;
-   allocInfo.pSetLayouts = layouts;
-
-   app->descriptorSets = vector(VkDescriptorSet, g_maxFramesInFlight, &global_allocator);
-   if (vkAllocateDescriptorSets(app->devices.logical, &allocInfo, app->descriptorSets) != VK_SUCCESS) {
-      fprintf(stderr, "failed to allocate descriptor sets\n");
-      exit(EXIT_FAILURE);
-   }
-   vector_update_length(g_maxFramesInFlight, app->descriptorSets);
-
-   for (Size i = 0; i < g_maxFramesInFlight; i++) {
-      VkDescriptorBufferInfo bufferInfo = {};
-      bufferInfo.buffer = app->uniformBuffers[i];
-      bufferInfo.offset = 0;
-      bufferInfo.range = sizeof(UniformBufferObject);
-
-      VkWriteDescriptorSet descriptorWrite = {};
-      descriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-      descriptorWrite.dstSet = app->descriptorSets[i];
-      descriptorWrite.dstBinding = 0;
-      descriptorWrite.dstArrayElement = 0;
-      descriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-      descriptorWrite.descriptorCount = 1;
-      descriptorWrite.pBufferInfo = &bufferInfo;
-
-      vkUpdateDescriptorSets(app->devices.logical, 1, &descriptorWrite, 0, nullptr);
-   }
-}
-
 void init_vulkan(App* app) {
    app->instance = instance_create(&global_allocator);
    debug_utils_messenger_ext_setup(&app->instance, &app->debugMessenger);
@@ -506,8 +461,8 @@ void init_vulkan(App* app) {
    create_index_buffer(app);
    create_uniform_buffer(app);
 
-   create_descriptor_pool(app);
-   create_descriptor_sets(app);
+   app->descriptorPool = descriptor_pool_create(app->devices);
+   app->descriptorSets = descriptor_set_create(app->uniformBuffers, app->descriptorPool, app->devices, app->pipeline, &global_allocator);
    app->commandBuffers = command_buffers_create(app->devices, app->commandPool, &global_allocator);
    create_sync_objects(app);
 }

@@ -36,6 +36,12 @@ typedef struct {
 #define vector_length(a) (vector_header(a)->length)
 #define vector_capacity(a) (vector_header(a)->capacity)
 
+/*
+ * @brief Pushes value to back of a vector
+ *
+ * @param vec vector being appended to
+ * @param value value being appended
+ */
 #define vector_push_back(vec, value) ( \
       (vec) = vector_ensure_capacity(vec, 1, sizeof(value)), \
       (vec)[vector_header(vec)->length] = (value), \
