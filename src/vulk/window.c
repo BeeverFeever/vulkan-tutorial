@@ -28,14 +28,10 @@ void window_create_surface(Window* window, VkInstance instance) {
    }
 }
 
-static u32 clamp_u32(u32 value, u32 min, u32 max) {
-   if (value >= max) {
-      return max;
-   } else if (value <= min) {
-      return min;
-   } else {
-      return value;
-   }
+u32 clamp_u32(u32 value, u32 min, u32 max) {
+   if (value >= max) return max;
+   else if (value <= min) return min;
+   else return value;
 }
 
 VkExtent2D window_get_framebuffer_extent(Window *window, VkSurfaceCapabilitiesKHR capabilities) {

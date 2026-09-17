@@ -20,7 +20,7 @@ static Size get_padding(uintptr ptr, Size alignment) {
 // arena 
 
 Arena arena_init(Size capacity) {
-   Arena arena = {0};
+   Arena arena = {};
    arena.buf = malloc(capacity);
    arena.offset = 0;
    arena.capacity = capacity;
@@ -68,7 +68,7 @@ void arena_free_all(Arena* a) {
 }
 
 Allocator arena_allocator(Arena* a) {
-   Allocator allocator = {0};
+   Allocator allocator = {};
    allocator.alloc = arena_allocator_alloc;
    allocator.free = arena_allocator_free; 
    allocator.ctx = a;
@@ -90,7 +90,7 @@ static void debug_arena_allocator_free(Size size, void* ptr, void* ctx) {
 }
 
 Allocator debug_arena_allocator(Arena* a) {
-   Allocator allocator = {0};
+   Allocator allocator = {};
    allocator.alloc = debug_arena_allocator_alloc;
    allocator.free = debug_arena_allocator_free;
    allocator.ctx = a;
@@ -111,7 +111,7 @@ static void stdlib_allocator_free(Size size, void* ptr, void* ctx) {
 }
 
 Allocator stdlib_allocator() {
-   Allocator allocator = {0};
+   Allocator allocator = {};
    allocator.alloc = stdlib_allocator_alloc;
    allocator.free = stdlib_allocator_free;
    allocator.ctx = nullptr;

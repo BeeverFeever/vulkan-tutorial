@@ -1,4 +1,3 @@
-#include "vulkan/vulkan_core.h"
 #include <assert.h>
 #include <cglm/cam.h>
 #include <stdint.h>
@@ -16,7 +15,6 @@
 #define VECTOR_IMPLEMENTATION
 #include "vector.h"
 #include "memory.h"
-#include "file.h"
 
 #include <vulk/callbacks.h>
 #include <vulk/config.h>
@@ -25,6 +23,7 @@
 #include <vulk/debugutils.h>
 #include <vulk/renderer.h>
 #include <vulk/swapchain.h>
+#include <vulk/pipeline.h>
 
 typedef struct {
    vec2 pos;
@@ -51,10 +50,7 @@ typedef struct {
    
    Swapchain swapchain;
 
-   VkRenderPass renderPass;
-   VkDescriptorSetLayout descriptorSetLayout;
-   VkPipelineLayout pipelineLayout;
-   VkPipeline graphicsPipeline;
+   GraphicsPipeline pipeline;
 
    VkCommandPool commandPool;
    vectorT(VkCommandBuffer) commandBuffers;
@@ -90,7 +86,7 @@ constexpr u16 indices[] = {
    0, 1, 2, 2, 3, 0,
 };
 
-Allocator global_allocator = {0};
+Allocator global_allocator = {};
 
 void framebuffer_resize_callback(GLFWwindow* window, int width, int height) {
    App* app = (App*)glfwGetWindowUserPointer(window); 
@@ -103,33 +99,8 @@ void key_callback(GLFWwindow* window, int key, int scancode, int action, int mod
    }
 }
 
-u32 clamp_u32(u32 value, u32 min, u32 max) {
-   if (value >= max) {
-      return max;
-   } else if (value <= min) {
-      return min;
-   } else {
-      return value;
-   }
-}
-
-
-VkShaderModule create_shader_module(App* app, u32* code, Size codeLength) {
-   VkShaderModuleCreateInfo createInfo = {0};
-   createInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
-   createInfo.codeSize = codeLength;
-   createInfo.pCode = code;
-
-   VkShaderModule shaderModule;
-   if (vkCreateShaderModule(app->devices.logical, &createInfo, nullptr, &shaderModule) != VK_SUCCESS) {
-      fprintf(stderr, "failed to create shader module.\n");
-      exit(EXIT_FAILURE);
-   }
-   return shaderModule;
-}
-
 VkVertexInputBindingDescription get_vertex_binding_description() {
-   VkVertexInputBindingDescription bindingDescription = {0};
+   VkVertexInputBindingDescription bindingDescription = {};
    bindingDescription.binding = 0;
    bindingDescription.stride = sizeof(Vertex);
    bindingDescription.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
@@ -137,9 +108,7 @@ VkVertexInputBindingDescription get_vertex_binding_description() {
    return bindingDescription;
 }
 
-vectorT(VkVertexInputAttributeDescription) get_vertex_attribute_descriptions() {
-   vectorT(VkVertexInputAttributeDescription) attributeDescriptions = vector(VkVertexInputAttributeDescription, 2, &global_allocator);
-
+vectorT(VkVertexInputAttributeDescription) get_vertex_attribute_descriptions(Allocator* allocator) { vectorT(VkVertexInputAttributeDescription) attributeDescriptions = vector(VkVertexInputAttributeDescription, 2, allocator);
    VkVertexInputAttributeDescription attrs1 = (VkVertexInputAttributeDescription){
       .binding = 0,
       .location = 0,
@@ -160,172 +129,10 @@ vectorT(VkVertexInputAttributeDescription) get_vertex_attribute_descriptions() {
    return attributeDescriptions;
 }
 
-void create_graphics_pipeline(App* app) {
-   Size vertLength = 0;
-   Size fragLength = 0;
-
-   u32* fragShaderCode = read_binary_file("resources/shaders/frag.spv", &fragLength, &global_allocator);
-   u32* vertShaderCode = read_binary_file("resources/shaders/vert.spv", &vertLength, &global_allocator);
-
-   VkShaderModule vertShaderModule = create_shader_module(app, vertShaderCode, vertLength);
-   VkShaderModule fragShaderModule = create_shader_module(app, fragShaderCode, fragLength);
-
-   VkPipelineShaderStageCreateInfo vertShaderStageInfo = {0};
-   vertShaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-   vertShaderStageInfo.stage = VK_SHADER_STAGE_VERTEX_BIT;
-   vertShaderStageInfo.module = vertShaderModule;
-   vertShaderStageInfo.pName = "main";
-
-   VkPipelineShaderStageCreateInfo fragShaderStageInfo = {0};
-   fragShaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-   fragShaderStageInfo.stage = VK_SHADER_STAGE_FRAGMENT_BIT;
-   fragShaderStageInfo.module = fragShaderModule;
-   fragShaderStageInfo.pName = "main";
-
-   VkPipelineShaderStageCreateInfo shaderStages[] = {vertShaderStageInfo, fragShaderStageInfo};
-
-   VkVertexInputBindingDescription bindingDescription = get_vertex_binding_description();
-   vectorT(VkVertexInputAttributeDescription) attributeDescriptions = get_vertex_attribute_descriptions();
-
-   VkPipelineVertexInputStateCreateInfo vertexInputInfo = {0};
-   vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
-   vertexInputInfo.vertexBindingDescriptionCount = 1;
-   vertexInputInfo.vertexAttributeDescriptionCount = (u32)vector_length(attributeDescriptions);
-   vertexInputInfo.pVertexBindingDescriptions = &bindingDescription;
-   vertexInputInfo.pVertexAttributeDescriptions = attributeDescriptions;
-
-   VkPipelineInputAssemblyStateCreateInfo inputAssembly = {0};
-   inputAssembly.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
-   inputAssembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
-   inputAssembly.primitiveRestartEnable = VK_FALSE;
-
-   VkPipelineViewportStateCreateInfo viewportState = {0};
-   viewportState.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
-   viewportState.viewportCount = 1;
-   viewportState.scissorCount = 1;
-
-   VkPipelineRasterizationStateCreateInfo rasterizer = {0};
-   rasterizer.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
-   rasterizer.depthClampEnable = VK_FALSE;
-   rasterizer.rasterizerDiscardEnable = VK_FALSE;
-   rasterizer.polygonMode = VK_POLYGON_MODE_FILL;
-   rasterizer.lineWidth = 1.0f;
-   rasterizer.cullMode = VK_CULL_MODE_BACK_BIT;
-   rasterizer.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
-   rasterizer.depthBiasEnable = VK_FALSE;
-
-   VkPipelineMultisampleStateCreateInfo multisampling = {0};
-   multisampling.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
-   multisampling.sampleShadingEnable = VK_FALSE;
-   multisampling.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
-
-   VkPipelineColorBlendAttachmentState colorBlendAttachment = {0};
-   colorBlendAttachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
-   colorBlendAttachment.blendEnable = VK_FALSE;
-
-   VkPipelineColorBlendStateCreateInfo colorBlending = {0};
-   colorBlending.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
-   colorBlending.logicOpEnable = VK_FALSE;
-   colorBlending.logicOp = VK_LOGIC_OP_COPY;
-   colorBlending.attachmentCount = 1;
-   colorBlending.pAttachments = &colorBlendAttachment;
-   colorBlending.blendConstants[0] = 0.0f;
-   colorBlending.blendConstants[1] = 0.0f;
-   colorBlending.blendConstants[2] = 0.0f;
-   colorBlending.blendConstants[3] = 0.0f;
-
-   VkDynamicState dynamicStates[] = {
-      VK_DYNAMIC_STATE_VIEWPORT,
-      VK_DYNAMIC_STATE_SCISSOR,
-   };
-
-   VkPipelineDynamicStateCreateInfo dynamicState = {0};
-   dynamicState.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
-   dynamicState.dynamicStateCount = lengthof(dynamicStates);
-   dynamicState.pDynamicStates = dynamicStates;
-
-   VkPipelineLayoutCreateInfo pipelineLayoutInfo = {0};
-   pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-   pipelineLayoutInfo.setLayoutCount = 1;
-   pipelineLayoutInfo.pSetLayouts = &app->descriptorSetLayout;
-
-   if (vkCreatePipelineLayout(app->devices.logical, &pipelineLayoutInfo, nullptr, &app->pipelineLayout) != VK_SUCCESS) {
-      fprintf(stderr, "failed to create pipeline layout.\n");
-      exit(EXIT_FAILURE);
-   }
-
-   VkGraphicsPipelineCreateInfo pipelineInfo = {0};
-   pipelineInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
-   pipelineInfo.stageCount = 2;
-   pipelineInfo.pStages = shaderStages;
-   pipelineInfo.pVertexInputState = &vertexInputInfo;
-   pipelineInfo.pInputAssemblyState = &inputAssembly;
-   pipelineInfo.pViewportState = &viewportState;
-   pipelineInfo.pRasterizationState = &rasterizer;
-   pipelineInfo.pMultisampleState = &multisampling;
-   pipelineInfo.pDepthStencilState = nullptr; // Optional
-   pipelineInfo.pColorBlendState = &colorBlending;
-   pipelineInfo.pDynamicState = &dynamicState;
-   pipelineInfo.layout = app->pipelineLayout;
-   pipelineInfo.renderPass = app->renderPass;
-   pipelineInfo.subpass = 0;
-
-   if (vkCreateGraphicsPipelines(app->devices.logical, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &app->graphicsPipeline) != VK_SUCCESS) {
-      fprintf(stderr, "failed to create graphics pipeline.\n");
-      exit(EXIT_FAILURE);
-   }
-
-   vkDestroyShaderModule(app->devices.logical, vertShaderModule, nullptr);
-   vkDestroyShaderModule(app->devices.logical, fragShaderModule, nullptr);
-}
-
-void create_render_pass(App* app) {
-   VkAttachmentDescription colourAttachment = {0};
-   colourAttachment.format = app->swapchain.imageFormat;
-   colourAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
-   colourAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-   colourAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-   colourAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-   colourAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-   colourAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-   colourAttachment.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
-
-   VkAttachmentReference colourAttachmentRef = {0};
-   colourAttachmentRef.attachment = 0;
-   colourAttachmentRef.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-
-   VkSubpassDescription subpass = {0};
-   subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
-   subpass.colorAttachmentCount = 1;
-   subpass.pColorAttachments = &colourAttachmentRef;
-
-   VkSubpassDependency dependency = {0};
-   dependency.srcSubpass = VK_SUBPASS_EXTERNAL;
-   dependency.dstSubpass = 0;
-   dependency.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-   dependency.srcAccessMask = 0;
-   dependency.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-   dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
-
-   VkRenderPassCreateInfo renderPassInfo = {0};
-   renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
-   renderPassInfo.attachmentCount = 1;
-   renderPassInfo.pAttachments = &colourAttachment;
-   renderPassInfo.subpassCount = 1;
-   renderPassInfo.pSubpasses = &subpass;
-   renderPassInfo.pDependencies = &dependency;
-   renderPassInfo.dependencyCount = 1;
-
-   if (vkCreateRenderPass(app->devices.logical, &renderPassInfo, nullptr, &app->renderPass) != VK_SUCCESS) {
-      fprintf(stderr, "failed to create render pass.\n");
-      exit(EXIT_FAILURE);
-   }
-}
-
 void create_command_pool(App* app) {
    QueueFamilyIndices queueFamilyIndices = find_queue_families(app->devices.physical, app->window.surface);
 
-   VkCommandPoolCreateInfo poolInfo = {0};
+   VkCommandPoolCreateInfo poolInfo = {};
    poolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
    poolInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
    poolInfo.queueFamilyIndex = queueFamilyIndices.graphicsFamily;
@@ -340,7 +147,7 @@ void create_command_buffers(App* app) {
    app->commandBuffers = vector(VkCommandBuffer, g_maxFramesInFlight, &global_allocator);
    vector_update_length(g_maxFramesInFlight, app->commandBuffers);
 
-   VkCommandBufferAllocateInfo allocInfo = {0};
+   VkCommandBufferAllocateInfo allocInfo = {};
    allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
    allocInfo.commandPool = app->commandPool;
    allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
@@ -353,7 +160,7 @@ void create_command_buffers(App* app) {
 }
 
 void record_command_buffer(App* app, VkCommandBuffer commandBuffer, u32 imageIndex) {
-   VkCommandBufferBeginInfo beginInfo = {0};
+   VkCommandBufferBeginInfo beginInfo = {};
    beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
 
    if (vkBeginCommandBuffer(commandBuffer, &beginInfo) != VK_SUCCESS) {
@@ -361,9 +168,9 @@ void record_command_buffer(App* app, VkCommandBuffer commandBuffer, u32 imageInd
       exit(EXIT_FAILURE);
    }
 
-   VkRenderPassBeginInfo renderPassInfo = {0};
+   VkRenderPassBeginInfo renderPassInfo = {};
    renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-   renderPassInfo.renderPass = app->renderPass;
+   renderPassInfo.renderPass = app->pipeline.renderPass;
    renderPassInfo.framebuffer = app->swapchain.framebuffers[imageIndex];
    renderPassInfo.renderArea.offset = (VkOffset2D){0, 0};
    renderPassInfo.renderArea.extent = app->swapchain.extent;
@@ -373,9 +180,9 @@ void record_command_buffer(App* app, VkCommandBuffer commandBuffer, u32 imageInd
    renderPassInfo.pClearValues = &clearColor;
 
    vkCmdBeginRenderPass(commandBuffer, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
-   vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, app->graphicsPipeline);
+   vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, app->pipeline.handle);
 
-   VkViewport viewport = {0};
+   VkViewport viewport = {};
    viewport.x = 0.0f;
    viewport.y = 0.0f;
    viewport.width = (float)app->swapchain.extent.width;
@@ -384,7 +191,7 @@ void record_command_buffer(App* app, VkCommandBuffer commandBuffer, u32 imageInd
    viewport.maxDepth = 1.0f;
    vkCmdSetViewport(commandBuffer, 0, 1, &viewport);
 
-   VkRect2D scissor = {0};
+   VkRect2D scissor = {};
    scissor.offset = (VkOffset2D){0, 0};
    scissor.extent = app->swapchain.extent;
    vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
@@ -395,7 +202,7 @@ void record_command_buffer(App* app, VkCommandBuffer commandBuffer, u32 imageInd
    vkCmdBindVertexBuffers(commandBuffer, 0, 1, vertexBuffers, offsets);
    vkCmdBindIndexBuffer(commandBuffer, app->indexBuffer, 0, VK_INDEX_TYPE_UINT16);
 
-   vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, app->pipelineLayout, 0, 1, &app->descriptorSets[app->currentFrame], 0, nullptr);
+   vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, app->pipeline.layout, 0, 1, &app->descriptorSets[app->currentFrame], 0, nullptr);
    vkCmdDrawIndexed(commandBuffer, lengthof(indices), 1, 0, 0, 0);
 
    vkCmdEndRenderPass(commandBuffer);
@@ -415,10 +222,10 @@ void create_sync_objects(App* app) {
    vector_update_length(g_maxFramesInFlight, app->imageAvailableSemaphores);
    vector_update_length(g_maxFramesInFlight, app->inFlightFences);
 
-   VkSemaphoreCreateInfo semaphoreInfo = {0};
+   VkSemaphoreCreateInfo semaphoreInfo = {};
    semaphoreInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
 
-   VkFenceCreateInfo fenceInfo = {0};
+   VkFenceCreateInfo fenceInfo = {};
    fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
    fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;
 
@@ -441,7 +248,7 @@ void create_sync_objects(App* app) {
 void update_uniform_buffer(App* app) {
    double now = glfwGetTime();
    
-   UniformBufferObject ubo = {0};
+   UniformBufferObject ubo = {};
    glm_rotate_make(ubo.model, glm_rad((float)now * 100.0f), (vec3){0.0f, 0.0f, 1.0f});
    glm_lookat((vec3){2.0f, 2.0f, 2.0f}, (vec3){0.0f, 0.0f, 0.0f}, (vec3){0.0f, 0.0f, 1.0f}, ubo.view);
    glm_perspective(glm_rad(45.0f), (float)app->swapchain.extent.width / (float)app->swapchain.extent.height, 0.1f, 10.0f, ubo.proj);
@@ -469,7 +276,7 @@ void draw_frame(App* app) {
    vkResetCommandBuffer(app->commandBuffers[app->currentFrame], 0);
    record_command_buffer(app, app->commandBuffers[app->currentFrame], imageIndex);
 
-   VkSubmitInfo submitInfo = {0};
+   VkSubmitInfo submitInfo = {};
    submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
 
    VkSemaphore waitSemaphores[] = {app->imageAvailableSemaphores[app->currentFrame]};
@@ -490,7 +297,7 @@ void draw_frame(App* app) {
       exit(EXIT_FAILURE);
    }
 
-   VkPresentInfoKHR presentInfo = {0};
+   VkPresentInfoKHR presentInfo = {};
    presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
 
    presentInfo.waitSemaphoreCount = 1;
@@ -511,7 +318,7 @@ void draw_frame(App* app) {
       while (newExtent.width == 0 || newExtent.height == 0) {
          newExtent = window_get_framebuffer_extent(&app->window, capabilities);
       }
-      swapchain_recreate(&app->swapchain, &app->window, app->devices, app->renderPass, newExtent, &global_allocator);
+      swapchain_recreate(&app->swapchain, &app->window, app->devices, app->pipeline.renderPass, newExtent, &global_allocator);
    } else if (result != VK_SUCCESS) {
       fprintf(stderr, "failed to present swap chain image!");
       exit(EXIT_FAILURE);
@@ -536,7 +343,7 @@ u32 find_memory_type(App* app, u32 typeFilter, VkMemoryPropertyFlags properties)
 }
 
 void create_buffer(App* app, VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties, VkBuffer* buffer, VkDeviceMemory* bufferMemory) {
-   VkBufferCreateInfo bufferInfo = {0};
+   VkBufferCreateInfo bufferInfo = {};
    bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
    bufferInfo.size = size;
    bufferInfo.usage = usage;
@@ -550,7 +357,7 @@ void create_buffer(App* app, VkDeviceSize size, VkBufferUsageFlags usage, VkMemo
    VkMemoryRequirements memRequirements;
    vkGetBufferMemoryRequirements(app->devices.logical, *buffer, &memRequirements);
 
-   VkMemoryAllocateInfo allocInfo = {0};
+   VkMemoryAllocateInfo allocInfo = {};
    allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
    allocInfo.allocationSize = memRequirements.size;
    allocInfo.memoryTypeIndex = find_memory_type(app, memRequirements.memoryTypeBits, properties);
@@ -564,7 +371,7 @@ void create_buffer(App* app, VkDeviceSize size, VkBufferUsageFlags usage, VkMemo
 }
 
 void copy_buffer(App* app, VkBuffer src, VkBuffer dest, VkDeviceSize size) {
-   VkCommandBufferAllocateInfo allocInfo = {0};
+   VkCommandBufferAllocateInfo allocInfo = {};
    allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
    allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
    allocInfo.commandPool = app->commandPool;
@@ -573,20 +380,20 @@ void copy_buffer(App* app, VkBuffer src, VkBuffer dest, VkDeviceSize size) {
    VkCommandBuffer commandBuffer;
    vkAllocateCommandBuffers(app->devices.logical, &allocInfo, &commandBuffer);
 
-   VkCommandBufferBeginInfo beginInfo = {0};
+   VkCommandBufferBeginInfo beginInfo = {};
    beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
    beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
 
    vkBeginCommandBuffer(commandBuffer, &beginInfo);
 
-   VkBufferCopy copyRegion = {0};
+   VkBufferCopy copyRegion = {};
    copyRegion.srcOffset = 0; // Optional
    copyRegion.dstOffset = 0; // Optional
    copyRegion.size = size;
    vkCmdCopyBuffer(commandBuffer, src, dest, 1, &copyRegion);
    vkEndCommandBuffer(commandBuffer);
 
-   VkSubmitInfo submitInfo = {0};
+   VkSubmitInfo submitInfo = {};
    submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
    submitInfo.commandBufferCount = 1;
    submitInfo.pCommandBuffers = &commandBuffer;
@@ -635,24 +442,6 @@ void create_index_buffer(App* app) {
    vkFreeMemory(app->devices.logical, stagingBufferMemory, nullptr);
 }
 
-void create_descriptor_set_layout(App* app) {
-   VkDescriptorSetLayoutBinding uboLayoutBinding = {0};
-   uboLayoutBinding.binding = 0;
-   uboLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-   uboLayoutBinding.descriptorCount = 1;
-   uboLayoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
-
-   VkDescriptorSetLayoutCreateInfo layoutInfo = {0};
-   layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-   layoutInfo.bindingCount = 1;
-   layoutInfo.pBindings = &uboLayoutBinding;
-
-   if (vkCreateDescriptorSetLayout(app->devices.logical, &layoutInfo, nullptr, &app->descriptorSetLayout) != VK_SUCCESS) {
-      fprintf(stderr, "failed to create descriptor set layout\n");
-      exit(EXIT_FAILURE);
-   }
-}
-
 void create_uniform_buffer(App* app) {
    VkDeviceSize bufferSize = sizeof(UniformBufferObject);
 
@@ -672,11 +461,11 @@ void create_uniform_buffer(App* app) {
 }
 
 void create_descriptor_pool(App* app) {
-   VkDescriptorPoolSize poolSize = {0};
+   VkDescriptorPoolSize poolSize = {};
    poolSize.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
    poolSize.descriptorCount = (u32)g_maxFramesInFlight;
 
-   VkDescriptorPoolCreateInfo poolInfo = {0};
+   VkDescriptorPoolCreateInfo poolInfo = {};
    poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
    poolInfo.poolSizeCount = 1;
    poolInfo.pPoolSizes = &poolSize;
@@ -691,9 +480,9 @@ void create_descriptor_pool(App* app) {
 void create_descriptor_sets(App* app) {
    vectorT(VkDescriptorSetLayout) layouts = vector(VkDescriptorSetLayout, g_maxFramesInFlight, &global_allocator);
    for (Size i = 0; i < g_maxFramesInFlight; i++) {
-      vector_push_back(layouts, app->descriptorSetLayout);
+      vector_push_back(layouts, app->pipeline.descriptorSetLayout);
    }
-   VkDescriptorSetAllocateInfo allocInfo = {0};
+   VkDescriptorSetAllocateInfo allocInfo = {};
    allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
    allocInfo.descriptorPool = app->descriptorPool;
    allocInfo.descriptorSetCount = (u32)g_maxFramesInFlight;
@@ -707,12 +496,12 @@ void create_descriptor_sets(App* app) {
    vector_update_length(g_maxFramesInFlight, app->descriptorSets);
 
    for (Size i = 0; i < g_maxFramesInFlight; i++) {
-      VkDescriptorBufferInfo bufferInfo = {0};
+      VkDescriptorBufferInfo bufferInfo = {};
       bufferInfo.buffer = app->uniformBuffers[i];
       bufferInfo.offset = 0;
       bufferInfo.range = sizeof(UniformBufferObject);
 
-      VkWriteDescriptorSet descriptorWrite = {0};
+      VkWriteDescriptorSet descriptorWrite = {};
       descriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
       descriptorWrite.dstSet = app->descriptorSets[i];
       descriptorWrite.dstBinding = 0;
@@ -734,15 +523,18 @@ void init_vulkan(App* app) {
    app->devices.logical = device_logical_create(&app->queues, app->window.surface, app->devices.physical);
 
    app->swapchain = swapchain_create(&app->window, app->devices, &global_allocator);
+
    swapchain_create_image_views(&app->swapchain, app->devices, &global_allocator);
-   create_render_pass(app);
-   create_descriptor_set_layout(app);
-   create_graphics_pipeline(app);
-   swapchain_create_framebuffers(&app->swapchain, app->devices, app->renderPass, &global_allocator);
+   app->pipeline = graphics_pipeline_create(app->devices, app->swapchain, &global_allocator);
+
+   swapchain_create_framebuffers(&app->swapchain, app->devices, app->pipeline.renderPass, &global_allocator);
+
    create_command_pool(app);
+
    create_vertex_buffer(app);
    create_index_buffer(app);
    create_uniform_buffer(app);
+
    create_descriptor_pool(app);
    create_descriptor_sets(app);
    create_command_buffers(app);
@@ -750,7 +542,7 @@ void init_vulkan(App* app) {
 }
 
 App init_app(void) {
-   App app = {0};
+   App app = {};
    app.startTime = time(nullptr);
    app.win_width = 800;
    app.win_height = 600;
@@ -768,7 +560,7 @@ void cleanup(App* app) {
    }
 
    vkDestroyDescriptorPool(app->devices.logical, app->descriptorPool, nullptr);
-   vkDestroyDescriptorSetLayout(app->devices.logical, app->descriptorSetLayout, nullptr);
+   vkDestroyDescriptorSetLayout(app->devices.logical, app->pipeline.descriptorSetLayout, nullptr);
 
    vkDestroyBuffer(app->devices.logical, app->vertexBuffer, nullptr);
    vkFreeMemory(app->devices.logical, app->vertexBufferMemory, nullptr);
@@ -786,9 +578,9 @@ void cleanup(App* app) {
 
    vkDestroyCommandPool(app->devices.logical, app->commandPool, nullptr);
 
-   vkDestroyPipeline(app->devices.logical, app->graphicsPipeline, nullptr);
-   vkDestroyPipelineLayout(app->devices.logical, app->pipelineLayout, nullptr);
-   vkDestroyRenderPass(app->devices.logical, app->renderPass, nullptr);
+   vkDestroyPipeline(app->devices.logical, app->pipeline.handle, nullptr);
+   vkDestroyPipelineLayout(app->devices.logical, app->pipeline.layout, nullptr);
+   vkDestroyRenderPass(app->devices.logical, app->pipeline.renderPass, nullptr);
 
    device_logical_destroy(app->devices.logical);
 
