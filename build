@@ -11,4 +11,8 @@ COMPILER_FLAGS="-std=c23 -g3 -Wall -Wextra -Wconversion -Wdouble-promotion -Wno-
 INCLUDE_FLAGS="-Isrc -I$VULKAN_SDK/include"
 LINKER_FLAGS="-lm -lcglm -lglfw -lvulkan -lxcb -lX11 -lX11-xcb -lxkbcommon -pedantic -L$VULKAN_SDK/lib"
 
-cc -include defines.h $cfiles $COMPILER_FLAGS $INCLUDE_FLAGS $LINKER_FLAGS
+command -v bear >/dev/null && BEAR="bear --" || BEAR=
+
+$BEAR cc -include defines.h $cfiles $COMPILER_FLAGS $INCLUDE_FLAGS $LINKER_FLAGS
+
+./a.out

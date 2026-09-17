@@ -1,10 +1,11 @@
 [
   {
+    "file": "./src/file.c",
     "arguments": [
-      "/usr/sbin/cc",
-      "-c",
+      "cc",
       "-include",
       "defines.h",
+      "./src/file.c",
       "-std=c23",
       "-g3",
       "-Wall",
@@ -18,18 +19,17 @@
       "-finstrument-functions",
       "-Isrc",
       "-I/home/beever/dev/vulkan/vulkan-1.4.321.1/x86_64/include",
-      "-pedantic",
-      "./src/main.c"
+      "-pedantic"
     ],
-    "directory": "/home/beever/dev/vulkan",
-    "file": "/home/beever/dev/vulkan/src/main.c"
+    "directory": "/home/beever/dev/vulkan"
   },
   {
+    "file": "./src/memory.c",
     "arguments": [
-      "/usr/sbin/cc",
-      "-c",
+      "cc",
       "-include",
       "defines.h",
+      "./src/memory.c",
       "-std=c23",
       "-g3",
       "-Wall",
@@ -43,18 +43,17 @@
       "-finstrument-functions",
       "-Isrc",
       "-I/home/beever/dev/vulkan/vulkan-1.4.321.1/x86_64/include",
-      "-pedantic",
-      "./src/memory.c"
+      "-pedantic"
     ],
-    "directory": "/home/beever/dev/vulkan",
-    "file": "/home/beever/dev/vulkan/src/memory.c"
+    "directory": "/home/beever/dev/vulkan"
   },
   {
+    "file": "./src/vulk/window.c",
     "arguments": [
-      "/usr/sbin/cc",
-      "-c",
+      "cc",
       "-include",
       "defines.h",
+      "./src/vulk/window.c",
       "-std=c23",
       "-g3",
       "-Wall",
@@ -68,18 +67,17 @@
       "-finstrument-functions",
       "-Isrc",
       "-I/home/beever/dev/vulkan/vulkan-1.4.321.1/x86_64/include",
-      "-pedantic",
-      "./src/file.c"
+      "-pedantic"
     ],
-    "directory": "/home/beever/dev/vulkan",
-    "file": "/home/beever/dev/vulkan/src/file.c"
+    "directory": "/home/beever/dev/vulkan"
   },
   {
+    "file": "./src/vulk/pipeline.c",
     "arguments": [
-      "/usr/sbin/cc",
-      "-c",
+      "cc",
       "-include",
       "defines.h",
+      "./src/vulk/pipeline.c",
       "-std=c23",
       "-g3",
       "-Wall",
@@ -93,10 +91,248 @@
       "-finstrument-functions",
       "-Isrc",
       "-I/home/beever/dev/vulkan/vulkan-1.4.321.1/x86_64/include",
-      "-pedantic",
-      "./src/log.c"
+      "-pedantic"
     ],
-    "directory": "/home/beever/dev/vulkan",
-    "file": "/home/beever/dev/vulkan/src/log.c"
+    "directory": "/home/beever/dev/vulkan"
+  },
+  {
+    "file": "./src/vulk/shaderModule.c",
+    "arguments": [
+      "cc",
+      "-include",
+      "defines.h",
+      "./src/vulk/shaderModule.c",
+      "-std=c23",
+      "-g3",
+      "-Wall",
+      "-Wextra",
+      "-Wconversion",
+      "-Wdouble-promotion",
+      "-Wno-unused-parameter",
+      "-Wno-unused-function",
+      "-Wno-sign-conversion",
+      "-fsanitize=undefined",
+      "-finstrument-functions",
+      "-Isrc",
+      "-I/home/beever/dev/vulkan/vulkan-1.4.321.1/x86_64/include",
+      "-pedantic"
+    ],
+    "directory": "/home/beever/dev/vulkan"
+  },
+  {
+    "file": "./src/vulk/config.c",
+    "arguments": [
+      "cc",
+      "-include",
+      "defines.h",
+      "./src/vulk/config.c",
+      "-std=c23",
+      "-g3",
+      "-Wall",
+      "-Wextra",
+      "-Wconversion",
+      "-Wdouble-promotion",
+      "-Wno-unused-parameter",
+      "-Wno-unused-function",
+      "-Wno-sign-conversion",
+      "-fsanitize=undefined",
+      "-finstrument-functions",
+      "-Isrc",
+      "-I/home/beever/dev/vulkan/vulkan-1.4.321.1/x86_64/include",
+      "-pedantic"
+    ],
+    "directory": "/home/beever/dev/vulkan"
+  },
+  {
+    "file": "./src/vulk/debugutils.c",
+    "arguments": [
+      "cc",
+      "-include",
+      "defines.h",
+      "./src/vulk/debugutils.c",
+      "-std=c23",
+      "-g3",
+      "-Wall",
+      "-Wextra",
+      "-Wconversion",
+      "-Wdouble-promotion",
+      "-Wno-unused-parameter",
+      "-Wno-unused-function",
+      "-Wno-sign-conversion",
+      "-fsanitize=undefined",
+      "-finstrument-functions",
+      "-Isrc",
+      "-I/home/beever/dev/vulkan/vulkan-1.4.321.1/x86_64/include",
+      "-pedantic"
+    ],
+    "directory": "/home/beever/dev/vulkan"
+  },
+  {
+    "file": "./src/vulk/device.c",
+    "arguments": [
+      "cc",
+      "-include",
+      "defines.h",
+      "./src/vulk/device.c",
+      "-std=c23",
+      "-g3",
+      "-Wall",
+      "-Wextra",
+      "-Wconversion",
+      "-Wdouble-promotion",
+      "-Wno-unused-parameter",
+      "-Wno-unused-function",
+      "-Wno-sign-conversion",
+      "-fsanitize=undefined",
+      "-finstrument-functions",
+      "-Isrc",
+      "-I/home/beever/dev/vulkan/vulkan-1.4.321.1/x86_64/include",
+      "-pedantic"
+    ],
+    "directory": "/home/beever/dev/vulkan"
+  },
+  {
+    "file": "./src/vulk/queues.c",
+    "arguments": [
+      "cc",
+      "-include",
+      "defines.h",
+      "./src/vulk/queues.c",
+      "-std=c23",
+      "-g3",
+      "-Wall",
+      "-Wextra",
+      "-Wconversion",
+      "-Wdouble-promotion",
+      "-Wno-unused-parameter",
+      "-Wno-unused-function",
+      "-Wno-sign-conversion",
+      "-fsanitize=undefined",
+      "-finstrument-functions",
+      "-Isrc",
+      "-I/home/beever/dev/vulkan/vulkan-1.4.321.1/x86_64/include",
+      "-pedantic"
+    ],
+    "directory": "/home/beever/dev/vulkan"
+  },
+  {
+    "file": "./src/vulk/swapchain.c",
+    "arguments": [
+      "cc",
+      "-include",
+      "defines.h",
+      "./src/vulk/swapchain.c",
+      "-std=c23",
+      "-g3",
+      "-Wall",
+      "-Wextra",
+      "-Wconversion",
+      "-Wdouble-promotion",
+      "-Wno-unused-parameter",
+      "-Wno-unused-function",
+      "-Wno-sign-conversion",
+      "-fsanitize=undefined",
+      "-finstrument-functions",
+      "-Isrc",
+      "-I/home/beever/dev/vulkan/vulkan-1.4.321.1/x86_64/include",
+      "-pedantic"
+    ],
+    "directory": "/home/beever/dev/vulkan"
+  },
+  {
+    "file": "./src/vulk/renderer.c",
+    "arguments": [
+      "cc",
+      "-include",
+      "defines.h",
+      "./src/vulk/renderer.c",
+      "-std=c23",
+      "-g3",
+      "-Wall",
+      "-Wextra",
+      "-Wconversion",
+      "-Wdouble-promotion",
+      "-Wno-unused-parameter",
+      "-Wno-unused-function",
+      "-Wno-sign-conversion",
+      "-fsanitize=undefined",
+      "-finstrument-functions",
+      "-Isrc",
+      "-I/home/beever/dev/vulkan/vulkan-1.4.321.1/x86_64/include",
+      "-pedantic"
+    ],
+    "directory": "/home/beever/dev/vulkan"
+  },
+  {
+    "file": "./src/str.c",
+    "arguments": [
+      "cc",
+      "-include",
+      "defines.h",
+      "./src/str.c",
+      "-std=c23",
+      "-g3",
+      "-Wall",
+      "-Wextra",
+      "-Wconversion",
+      "-Wdouble-promotion",
+      "-Wno-unused-parameter",
+      "-Wno-unused-function",
+      "-Wno-sign-conversion",
+      "-fsanitize=undefined",
+      "-finstrument-functions",
+      "-Isrc",
+      "-I/home/beever/dev/vulkan/vulkan-1.4.321.1/x86_64/include",
+      "-pedantic"
+    ],
+    "directory": "/home/beever/dev/vulkan"
+  },
+  {
+    "file": "./src/log.c",
+    "arguments": [
+      "cc",
+      "-include",
+      "defines.h",
+      "./src/log.c",
+      "-std=c23",
+      "-g3",
+      "-Wall",
+      "-Wextra",
+      "-Wconversion",
+      "-Wdouble-promotion",
+      "-Wno-unused-parameter",
+      "-Wno-unused-function",
+      "-Wno-sign-conversion",
+      "-fsanitize=undefined",
+      "-finstrument-functions",
+      "-Isrc",
+      "-I/home/beever/dev/vulkan/vulkan-1.4.321.1/x86_64/include",
+      "-pedantic"
+    ],
+    "directory": "/home/beever/dev/vulkan"
+  },
+  {
+    "file": "./src/main.c",
+    "arguments": [
+      "cc",
+      "-include",
+      "defines.h",
+      "./src/main.c",
+      "-std=c23",
+      "-g3",
+      "-Wall",
+      "-Wextra",
+      "-Wconversion",
+      "-Wdouble-promotion",
+      "-Wno-unused-parameter",
+      "-Wno-unused-function",
+      "-Wno-sign-conversion",
+      "-fsanitize=undefined",
+      "-finstrument-functions",
+      "-Isrc",
+      "-I/home/beever/dev/vulkan/vulkan-1.4.321.1/x86_64/include",
+      "-pedantic"
+    ],
+    "directory": "/home/beever/dev/vulkan"
   }
 ]
