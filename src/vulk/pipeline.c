@@ -83,8 +83,8 @@ GraphicsPipeline graphics_pipeline_create(Device device, Swapchain swapchain, Al
    gPipe.descriptorSetLayout = _create_descriptor_set_layout(device);
    gPipe.renderPass = _create_render_pass(swapchain, device);
 
-   VkShaderModule vertShaderModule = shader_module_create(str("resources/shaders/vert.spv"), device, allocator);
-   VkShaderModule fragShaderModule = shader_module_create(str("resources/shaders/frag.spv"), device, allocator);
+   VkShaderModule vertShaderModule = shader_module_create(str("./resources/shaders/spv/basic.vert.spv"), device, allocator);
+   VkShaderModule fragShaderModule = shader_module_create(str("./resources/shaders/spv/basic.frag.spv"), device, allocator);
 
    VkPipelineShaderStageCreateInfo vertShaderStageInfo = {};
    vertShaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;

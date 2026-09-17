@@ -6,6 +6,7 @@
 #include <string.h>
 #include <time.h>
 
+#include <vulk/commands.h>
 #include <vulkan/vulkan.h>
 #include <cglm/cglm.h>
 
@@ -47,7 +48,7 @@ typedef struct {
    VkDebugUtilsMessengerEXT debugMessenger;
    Device devices;
    Queues queues;
-   
+
    Swapchain swapchain;
 
    GraphicsPipeline pipeline;
@@ -89,7 +90,7 @@ constexpr u16 indices[] = {
 Allocator global_allocator = {};
 
 void framebuffer_resize_callback(GLFWwindow* window, int width, int height) {
-   App* app = (App*)glfwGetWindowUserPointer(window); 
+   App* app = (App*)glfwGetWindowUserPointer(window);
    app->framebufferResized = true;
 }
 
@@ -127,36 +128,6 @@ vectorT(VkVertexInputAttributeDescription) get_vertex_attribute_descriptions(All
    vector_push_back(attributeDescriptions, attrs2);
 
    return attributeDescriptions;
-}
-
-void create_command_pool(App* app) {
-   QueueFamilyIndices queueFamilyIndices = find_queue_families(app->devices.physical, app->window.surface);
-
-   VkCommandPoolCreateInfo poolInfo = {};
-   poolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
-   poolInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
-   poolInfo.queueFamilyIndex = queueFamilyIndices.graphicsFamily;
-
-   if (vkCreateCommandPool(app->devices.logical, &poolInfo, nullptr, &app->commandPool) != VK_SUCCESS) {
-      fprintf(stderr, "failed to create command pool.\n");
-      exit(EXIT_FAILURE);
-   }
-}
-
-void create_command_buffers(App* app) {
-   app->commandBuffers = vector(VkCommandBuffer, g_maxFramesInFlight, &global_allocator);
-   vector_update_length(g_maxFramesInFlight, app->commandBuffers);
-
-   VkCommandBufferAllocateInfo allocInfo = {};
-   allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-   allocInfo.commandPool = app->commandPool;
-   allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-   allocInfo.commandBufferCount = (u32)vector_length(app->commandBuffers);
-
-   if (vkAllocateCommandBuffers(app->devices.logical, &allocInfo, app->commandBuffers) != VK_SUCCESS) {
-      fprintf(stderr, "failed to allocate command buffers.\n");
-      exit(EXIT_FAILURE);
-   }
 }
 
 void record_command_buffer(App* app, VkCommandBuffer commandBuffer, u32 imageIndex) {
@@ -247,7 +218,7 @@ void create_sync_objects(App* app) {
 
 void update_uniform_buffer(App* app) {
    double now = glfwGetTime();
-   
+
    UniformBufferObject ubo = {};
    glm_rotate_make(ubo.model, glm_rad((float)now * 100.0f), (vec3){0.0f, 0.0f, 1.0f});
    glm_lookat((vec3){2.0f, 2.0f, 2.0f}, (vec3){0.0f, 0.0f, 0.0f}, (vec3){0.0f, 0.0f, 1.0f}, ubo.view);
@@ -487,7 +458,7 @@ void create_descriptor_sets(App* app) {
    allocInfo.descriptorPool = app->descriptorPool;
    allocInfo.descriptorSetCount = (u32)g_maxFramesInFlight;
    allocInfo.pSetLayouts = layouts;
-   
+
    app->descriptorSets = vector(VkDescriptorSet, g_maxFramesInFlight, &global_allocator);
    if (vkAllocateDescriptorSets(app->devices.logical, &allocInfo, app->descriptorSets) != VK_SUCCESS) {
       fprintf(stderr, "failed to allocate descriptor sets\n");
@@ -516,7 +487,7 @@ void create_descriptor_sets(App* app) {
 
 void init_vulkan(App* app) {
    app->instance = instance_create(&global_allocator);
-   debug_utils_messenger_ext_setup(&app->instance, &app->debugMessenger); 
+   debug_utils_messenger_ext_setup(&app->instance, &app->debugMessenger);
    window_create_surface(&app->window, app->instance);
 
    app->devices.physical = device_physical_pick(app->instance, app->window.surface);
@@ -529,7 +500,7 @@ void init_vulkan(App* app) {
 
    swapchain_create_framebuffers(&app->swapchain, app->devices, app->pipeline.renderPass, &global_allocator);
 
-   create_command_pool(app);
+   app->commandPool = command_pool_create(app->devices, app->window);
 
    create_vertex_buffer(app);
    create_index_buffer(app);
@@ -537,7 +508,7 @@ void init_vulkan(App* app) {
 
    create_descriptor_pool(app);
    create_descriptor_sets(app);
-   create_command_buffers(app);
+   app->commandBuffers = command_buffers_create(app->devices, app->commandPool, &global_allocator);
    create_sync_objects(app);
 }
 
